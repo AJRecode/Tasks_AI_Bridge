@@ -49,7 +49,16 @@ Skip Inspector: `./start_tasks_bridge.sh --windows --no-inspector`
 
 Stop everything: `./start_tasks_bridge.sh --stop`
 
-### Cursor / Linux / WSL (recommended for contributors)
+`--stop` kills MCP, tunnel, and Inspector **first**, then closes Tasks Bridge Terminal windows (by saved window id and by tab title). That order avoids most “terminate running processes?” prompts. If Terminal still asks, you can disable the global prompt:
+
+```bash
+defaults write com.apple.Terminal ShellNeverPromptsOnClose -bool true
+```
+
+### `--status` and tunnel “idle”
+
+`./start_tasks_bridge.sh --status` probes MCP with a real `initialize` request. For the tunnel, a running `tunnel-client` with a healthy MCP server reports **UP** even when idle — the tunnel connects **on demand** when ChatGPT calls, so an idle tunnel is normal, not STALE.
+
 
 Open **separate terminal tabs** in Cursor (or any terminal emulator):
 

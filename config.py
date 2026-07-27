@@ -51,6 +51,41 @@ GOOGLE_REFRESH_TOKEN = os.environ.get("GOOGLE_REFRESH_TOKEN", "").strip()
 GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS_JSON", "").strip()
 GOOGLE_TOKEN_JSON = os.environ.get("GOOGLE_TOKEN_JSON", "").strip()
 
+# Inbound MCP authentication (required in production)
+MCP_API_TOKEN = os.environ.get("MCP_API_TOKEN", "").strip()
+
+# HTTP hardening
+RATE_LIMIT_REQUESTS = int(os.environ.get("MCP_RATE_LIMIT_REQUESTS", "60"))
+RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("MCP_RATE_LIMIT_WINDOW_SECONDS", "60"))
+MAX_REQUEST_BYTES = int(os.environ.get("MCP_MAX_REQUEST_BYTES", str(1024 * 1024)))
+
+# Railway preview environments inherit variables by default — block Google secrets
+# outside the named production environment unless explicitly overridden.
+PRODUCTION_ENVIRONMENT_NAME = os.environ.get(
+    "TASKS_BRIDGE_PRODUCTION_ENV", "production"
+).strip()
+ALLOW_PREVIEW_SECRETS = os.environ.get("ALLOW_PREVIEW_SECRETS", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+}
+
+
+def is_railway_preview() -> bool:
+    railway_env = os.environ.get("RAILWAY_ENVIRONMENT", "").strip()
+    if not railway_env:
+        return False
+    return railway_env.casefold() != PRODUCTION_ENVIRONMENT_NAME.casefold()
+
+
+def has_google_oauth_secrets() -> bool:
+    return bool(
+        GOOGLE_CLIENT_ID
+        or GOOGLE_CLIENT_SECRET
+        or GOOGLE_REFRESH_TOKEN
+        or GOOGLE_TOKEN_JSON
+    )
+
 
 def mcp_http_url(*, host: str | None = None, port: int | None = None) -> str:
     host = host or HOST

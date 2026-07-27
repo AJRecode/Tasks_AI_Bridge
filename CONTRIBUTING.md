@@ -50,6 +50,7 @@ bandit -r config.py bridge_diagnostics.py google_auth.py google_tasks.py mcp_ser
 |---|---|---|---|
 | `test_config.py` | Unit | Yes | No |
 | `test_bridge_diagnostics.py` | Unit | Yes | No |
+| `test_http_security.py` | Unit (401/auth) | Yes | No |
 | `test_task_services.py` | Integration smoke | No | Yes |
 | `test_write_task_services.py` | Integration smoke | No | Yes |
 | `test_create_task_list.py` | Integration smoke | No | Yes |

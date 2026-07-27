@@ -14,8 +14,8 @@ if TYPE_CHECKING:
     from mcp.server.fastmcp.server import FastMCP
     from mcp.server.fastmcp.tools.tool_manager import ToolManager
 
-# Bump when tool schemas or MCP surface changes (ChatGPT discovery debugging).
-SERVER_VERSION = "1.4.0"
+# Bump when tool schemas, MCP surface, or security behavior changes.
+SERVER_VERSION = "1.5.0"
 
 STARTED_AT = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 

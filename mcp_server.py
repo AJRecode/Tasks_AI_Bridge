@@ -15,6 +15,7 @@ See docs/local-dev.md and docs/railway.md.
 from __future__ import annotations
 
 import argparse
+import functools
 import logging
 import os
 import socket
@@ -29,6 +30,11 @@ from bridge_diagnostics import (
     build_diagnostics,
     install_discovery_logging,
     log_startup_banner,
+)
+from http_security import (
+    install_http_security,
+    production_safe_tool_error,
+    validate_deployment_security,
 )
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
@@ -125,13 +131,24 @@ mcp = FastMCP(
 @mcp.custom_route("/health", methods=["GET"])
 async def health_check(_request: Request) -> JSONResponse:
     """Lightweight health endpoint for Railway and load balancers."""
-    return JSONResponse(
-        {
-            "status": "ok",
-            "deployment": config.DEPLOYMENT,
-            "server_version": build_diagnostics(mcp._tool_manager)["server_version"],
-        }
-    )
+    payload = {"status": "ok", "deployment": config.DEPLOYMENT}
+    if not config.IS_PRODUCTION:
+        payload["server_version"] = build_diagnostics(mcp._tool_manager)["server_version"]
+    return JSONResponse(payload)
+
+
+def _safe_google_tool(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:
+            safe = production_safe_tool_error(exc)
+            if safe is not exc:
+                raise safe
+            raise
+
+    return wrapper
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -146,36 +163,42 @@ def get_bridge_diagnostics() -> dict:
 
 
 @mcp.tool(annotations=READ_ONLY)
+@_safe_google_tool
 def get_task_lists() -> list[dict]:
     """Return all task lists with name, id, and updated timestamp."""
     return fetch_task_lists()
 
 
 @mcp.tool(annotations=READ_ONLY)
+@_safe_google_tool
 def get_tasks(list_name: str) -> list[dict]:
     """Return all tasks from one list, identified by name."""
     return fetch_tasks(list_name)
 
 
 @mcp.tool(annotations=READ_ONLY)
+@_safe_google_tool
 def search_tasks(text: str) -> list[dict]:
     """Search task titles and notes across all lists."""
     return find_tasks(text)
 
 
 @mcp.tool(annotations=READ_ONLY)
+@_safe_google_tool
 def get_open_tasks(list_name: str) -> list[dict]:
     """Return open (incomplete) tasks from one list."""
     return fetch_open_tasks(list_name)
 
 
 @mcp.tool(annotations=WRITE_BOUNDED)
+@_safe_google_tool
 def create_task_list(list_name: str) -> dict:
     """Create a new task list. Rejects blank names and case-insensitive duplicates."""
     return add_task_list(list_name)
 
 
 @mcp.tool(annotations=WRITE_BOUNDED)
+@_safe_google_tool
 def create_task(
     list_name: str,
     title: str,
@@ -187,12 +210,14 @@ def create_task(
 
 
 @mcp.tool(annotations=WRITE_BOUNDED)
+@_safe_google_tool
 def complete_task(list_name: str, task_id: str) -> dict:
     """Mark one task completed. Use task id from get_open_tasks or search_tasks."""
     return mark_task_complete(list_name, task_id)
 
 
 @mcp.tool(annotations=WRITE_BOUNDED)
+@_safe_google_tool
 def update_task(
     list_name: str,
     task_id: str,
@@ -205,6 +230,7 @@ def update_task(
 
 
 @mcp.tool(annotations=WRITE_BOUNDED)
+@_safe_google_tool
 def move_task(from_list_name: str, task_id: str, to_list_name: str) -> dict:
     """Move a task from one list to another. Returns the task in its new list."""
     return relocate_task(from_list_name, task_id, to_list_name)
@@ -248,7 +274,9 @@ def _run_http() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
+    validate_deployment_security()
     install_discovery_logging(mcp, mcp_path=config.MCP_PATH)
+    install_http_security(mcp, mcp_path=config.MCP_PATH)
     log_startup_banner(mcp._tool_manager)
 
     print(f"Deployment: {config.DEPLOYMENT}")

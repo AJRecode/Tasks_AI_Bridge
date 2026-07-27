@@ -1,7 +1,7 @@
 # Project Status
 
-* **Last updated:** July 27, 2026 (CI + Dependabot added)
-* **Server version:** `1.4.0` (`bridge_diagnostics.py`)
+* **Last updated:** July 27, 2026 (v1.5.0 security + orchestration fixes)
+* **Server version:** `1.5.0` (`bridge_diagnostics.py`)
 * **License:** MIT
 * **Deployment modes:** `local` (default) | `production` (Railway via env)
 
@@ -46,9 +46,10 @@ GitHub  →  Railway  →  https://<app>.up.railway.app/mcp  →  ChatGPT
 | Diagnostics | `python test_bridge_diagnostics.py` or `pytest test_bridge_diagnostics.py` |
 | Google Tasks API (local) | `python test_task_services.py "General"` (requires OAuth files) |
 | MCP HTTP + `/health` | `curl http://127.0.0.1:8000/health` |
-| Local orchestration | `./start_tasks_bridge.sh --status` |
+| Local orchestration | `./start_tasks_bridge.sh --status` (tunnel idle = UP, not STALE) |
 | Railway artifacts | `Dockerfile`, `railway.toml`, `/health` route |
 | GitHub CI | `.github/workflows/ci.yml` — pytest, pip-audit, bandit on push/PR |
+| HTTP security | `http_security.py` — bearer auth on `/mcp`, rate/size limits (production) |
 | Dependabot | `.github/dependabot.yml` — weekly pip, Docker, Actions updates |
 
 ## Runtime status
@@ -57,7 +58,6 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 ## Known issues
 
-* **Tunnel status false positive** — `--status` may show the tunnel as STALE because it looks for a persistent TCP connection to port 8000. `tunnel-client` probes on startup and connects on demand; check the tunnel Terminal window or `http://127.0.0.1:8080/ui`.
 * **ChatGPT tool discovery lag** — new MCP tools may appear in Inspector before ChatGPT exposes them. Likely OpenAI registry propagation, not a stale server. See [docs/chatgpt-discovery.md](docs/chatgpt-discovery.md).
 * **`oauth_metadata` warnings** — expected for this read-only server (no OAuth on the MCP endpoint).
 * **`tools/list_changed` not enabled** — optional future enhancement.
@@ -74,6 +74,7 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 | File | Role |
 |---|---|
 | `mcp_server.py` | FastMCP server, `/health`, MCP tools |
+| `http_security.py` | Production bearer auth, rate limits, request-size limits |
 | `config.py` | Local vs production settings |
 | `google_auth.py` | File OAuth (local) or env vars (Railway) |
 | `start_tasks_bridge.sh` | Local orchestration only |

@@ -198,13 +198,17 @@ print_bridge_status() {
   local tunnel_pid
   tunnel_pid="$(tunnel_client_pids | head -1)"
   if [[ -n "$tunnel_pid" ]]; then
-    if tunnel_linked_to_mcp "$tunnel_pid"; then
+    if port_listening 8000 && mcp_responds; then
       tunnel_state="UP"
       tunnel_ok=1
-      tunnel_detail="PID $tunnel_pid, connected to localhost:8000"
+      if tunnel_linked_to_mcp "$tunnel_pid"; then
+        tunnel_detail="PID $tunnel_pid, active connection to localhost:8000"
+      else
+        tunnel_detail="PID $tunnel_pid, idle — connects on demand when ChatGPT calls"
+      fi
     elif port_listening 8000; then
       tunnel_state="STALE"
-      tunnel_detail="PID $tunnel_pid running but not connected to MCP — restart tunnel"
+      tunnel_detail="PID $tunnel_pid running but MCP initialize failed — restart MCP server"
     else
       tunnel_state="STALE"
       tunnel_detail="PID $tunnel_pid running but MCP server is down — restart both"
@@ -435,18 +439,42 @@ close_bridge_terminal_windows() {
   fi
 
   local closed_count=0
+  local extra_closed=0
 
   if [[ -f "$TERMINAL_WINDOW_IDS_FILE" ]]; then
     while IFS= read -r wid; do
       [[ -z "$wid" ]] && continue
-      if osascript -e "tell application \"Terminal\" to try" \
-        -e "close (every window whose id is $wid)" \
-        -e "end try" 2>/dev/null; then
+      if osascript <<OSA 2>/dev/null
+tell application "Terminal"
+  try
+    close (every window whose id is $wid) saving no
+  end try
+end tell
+OSA
+      then
         closed_count=$((closed_count + 1))
       fi
     done <"$TERMINAL_WINDOW_IDS_FILE"
     rm -f "$TERMINAL_WINDOW_IDS_FILE"
   fi
+
+  extra_closed="$(osascript <<'OSA' 2>/dev/null || echo 0
+tell application "Terminal"
+  set closedCount to 0
+  repeat with w in windows
+    try
+      set tabTitle to custom title of front tab of w
+      if tabTitle starts with "Tasks Bridge" then
+        close w saving no
+        set closedCount to closedCount + 1
+      end if
+    end try
+  end repeat
+  return closedCount
+end tell
+OSA
+)"
+  closed_count=$((closed_count + extra_closed))
 
   if [[ "$closed_count" -gt 0 ]]; then
     if [[ "$closed_count" -eq 1 ]]; then
@@ -473,10 +501,13 @@ stop_bridge() {
   local stopped=0
 
   stop_tmux_session && stopped=1 || true
-  close_bridge_terminal_windows
   stop_http_server && stopped=1 || true
   stop_tunnel_client && stopped=1 || true
   stop_inspector && stopped=1 || true
+  if [[ "$stopped" -eq 1 ]]; then
+    sleep 0.4
+  fi
+  close_bridge_terminal_windows
 
   if [[ "$stopped" -eq 0 ]]; then
     echo "Nothing was running."
