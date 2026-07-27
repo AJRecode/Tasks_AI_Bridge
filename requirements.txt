@@ -1,4 +1,4 @@
 google-api-python-client
 google-auth-oauthlib
 cryptography<50
-mcp>=1.24.0
+mcp>=1.28.1
