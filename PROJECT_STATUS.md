@@ -1,6 +1,6 @@
 # Project Status
 
-* **Last updated:** July 27, 2026
+* **Last updated:** July 27, 2026 (CI + Dependabot added)
 * **Server version:** `1.4.0` (`bridge_diagnostics.py`)
 * **License:** MIT
 * **Deployment modes:** `local` (default) | `production` (Railway via env)
@@ -42,12 +42,14 @@ GitHub  →  Railway  →  https://<app>.up.railway.app/mcp  →  ChatGPT
 
 | Capability | How to verify |
 |---|---|
-| Config local/production | `python test_config.py` |
-| Diagnostics | `python test_bridge_diagnostics.py` |
+| Config local/production | `python test_config.py` or `pytest test_config.py` |
+| Diagnostics | `python test_bridge_diagnostics.py` or `pytest test_bridge_diagnostics.py` |
 | Google Tasks API (local) | `python test_task_services.py "General"` (requires OAuth files) |
 | MCP HTTP + `/health` | `curl http://127.0.0.1:8000/health` |
 | Local orchestration | `./start_tasks_bridge.sh --status` |
 | Railway artifacts | `Dockerfile`, `railway.toml`, `/health` route |
+| GitHub CI | `.github/workflows/ci.yml` — pytest, pip-audit, bandit on push/PR |
+| Dependabot | `.github/dependabot.yml` — weekly pip, Docker, Actions updates |
 
 ## Runtime status
 
@@ -80,6 +82,9 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 | `docs/railway.md` | Railway deploy |
 | `docs/chatgpt-tunnel.md` | OpenAI tunnel setup |
 | `docs/chatgpt-discovery.md` | Debugging ChatGPT tool discovery |
+| `.github/workflows/ci.yml` | CI: unit tests + dependency audit + security scan |
+| `.github/dependabot.yml` | Automated dependency update PRs |
+| `scripts/check.sh` | Local pre-push gate (mirrors CI) |
 
 ## Docs
 

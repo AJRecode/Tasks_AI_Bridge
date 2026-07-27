@@ -13,10 +13,11 @@ Use `.env.example` and `credentials.json.example` as templates only.
 
 ## Before pushing to GitHub
 
-1. Run `git status` — confirm secret files are not listed.
-2. Run `git check-ignore -v credentials.json token.json .env` — all should match `.gitignore`.
-3. Rotate credentials if they were ever exposed (chat, screenshots, accidental commit).
-4. Do not commit `.cursor/`, `.tasks-bridge/`, or `tunnel-client` (all gitignored).
+1. Run `./scripts/check.sh` — same pytest, pip-audit, and bandit checks as GitHub CI.
+2. Run `git status` — confirm secret files are not listed.
+3. Run `git check-ignore -v credentials.json token.json .env` — all should match `.gitignore`.
+4. Rotate credentials if they were ever exposed (chat, screenshots, accidental commit).
+5. Do not commit `.cursor/`, `.tasks-bridge/`, or `tunnel-client` (all gitignored).
 
 ## Production (Railway)
 
