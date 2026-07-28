@@ -16,8 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY bridge/ ./bridge/
 COPY services/ ./services/
-COPY mcp_server.py config.py bridge_diagnostics.py http_security.py \
-     task_services.py google_auth.py google_tasks.py auth/ ./
+COPY mcp_server.py ./
 
 RUN chown -R appuser:appgroup /app
 USER appuser

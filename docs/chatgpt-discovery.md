@@ -26,7 +26,7 @@ Use this when adding a **new MCP tool** and you need to record where discovery b
 | # | Field | How to capture |
 |---|---|---|
 | 1 | **Server restarted at** | `.tasks-bridge/server-restart.json` → `restarted_at` |
-| 2 | **New tool name + expected schema hash** | Bump `SERVER_VERSION` in `bridge_diagnostics.py`; note hash from Inspector or `get_bridge_diagnostics` |
+| 2 | **New tool name + expected schema hash** | Bump `SERVER_VERSION` in `bridge/diagnostics/`; note hash from Inspector or `get_bridge_diagnostics` |
 | 3 | **Inspector first saw new tool at** | Inspector tools/list UI timestamp, or `discovery-timeline.jsonl` with `client_name` like `inspector-client` |
 | 4 | **ChatGPT Refresh clicked at** | Manual note |
 | 5 | **Refresh caused server traffic?** | MCP server log or `.tasks-bridge/discovery-timeline.jsonl`: any `initialize` / `tools/list` after step 4? |

@@ -191,6 +191,14 @@ def build_app() -> tuple[FastMCP, AuthProvider]:
     return server, auth_provider
 
 
+def bootstrap_http_server() -> tuple[FastMCP, AuthProvider]:
+    """Production HTTP startup path: auth provider → server → validate → middleware."""
+    auth_provider = create_auth_provider()
+    server = create_server(auth_provider)
+    prepare_http_stack(server, auth_provider)
+    return server, auth_provider
+
+
 def prepare_http_stack(server: FastMCP, auth_provider: AuthProvider) -> None:
     """Validate deployment and install HTTP middleware (Bearer → Security → FastMCP)."""
     validate_deployment(auth_provider)
@@ -240,8 +248,7 @@ def _run_http() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
-    server, auth_provider = build_app()
-    prepare_http_stack(server, auth_provider)
+    server, auth_provider = bootstrap_http_server()
     install_discovery_logging(server, mcp_path=config.MCP_PATH)
     log_startup_banner(server._tool_manager)
 

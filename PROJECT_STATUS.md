@@ -1,7 +1,7 @@
 # Project Status
 
-* **Last updated:** July 27, 2026 21:35 ET (v1.6.3 — HTTP auth integration pass)
-* **Server version:** `1.6.3` (`bridge/diagnostics/`)
+* **Last updated:** July 27, 2026 21:45 ET (v1.6.4 — production HTTP integration tests)
+* **Server version:** `1.6.4` (`bridge/diagnostics/`)
 * **License:** MIT
 * **Deployment modes:** `local` (default) | `production` (Railway via env)
 * **Inbound auth modes:** `none` (local) | `static` (Railway bearer) | `oauth` (exploratory stub)
@@ -50,6 +50,7 @@ GitHub  →  Railway  →  https://<app>.up.railway.app/mcp  →  curl / Inspect
 | Auth mode resolution | `pytest test_auth.py` |
 | Static bearer ASGI | `pytest test_static_bearer.py` |
 | HTTP auth integration | `pytest test_http_integration.py` |
+| Task tools (mocked Google API) | `pytest test_task_tools_mocked.py` |
 | Diagnostics | `python test_bridge_diagnostics.py` or `pytest test_bridge_diagnostics.py` |
 | Google Tasks API (local) | `python test_task_services.py "General"` (requires OAuth files) |
 | MCP HTTP + `/health` | `curl http://127.0.0.1:8000/health` |
@@ -109,8 +110,8 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 ## Recent result
 
-v1.6.3: `mcp_server.build_app()` + `prepare_http_stack()` wire `create_auth_provider`, `validate_deployment`, and middleware install (Bearer → Security → FastMCP). Canonical config is `bridge.config`; root `config.py` is shim only. E2E integration tests in `test_http_integration.py`.
+v1.6.4: `bootstrap_http_server()` mirrors production startup; consolidated HTTP integration test via `create_server()` + real middleware path; mocked task-tool regression tests; README/Railway docs clarify ChatGPT (tunnel/OAuth) vs static bearer clients; removed unused `http_security.py` shim.
 
 ## Next action
 
-Restart MCP to pick up v1.6.3: `./start_tasks_bridge.sh --stop` then `./start_tasks_bridge.sh`
+Commit and push, or restart MCP locally: `./start_tasks_bridge.sh`

@@ -21,6 +21,11 @@ _INITIALIZE_BODY = {
     },
 }
 
+_MCP_HEADERS = {
+    "Content-Type": "application/json",
+    "Accept": "application/json, text/event-stream",
+}
+
 _CONFIG_KEYS = (
     "TASKS_BRIDGE_DEPLOYMENT",
     "MCP_AUTH_MODE",
@@ -37,6 +42,12 @@ _CONFIG_KEYS = (
     "MCP_PATH",
     "MCP_PUBLIC_HOST",
 )
+
+_PRODUCTION_STATIC_ENV = {
+    "TASKS_BRIDGE_DEPLOYMENT": "production",
+    "MCP_AUTH_MODE": "static",
+    "MCP_API_TOKEN": "integration-secret",
+}
 
 
 def _apply_env(monkeypatch, **env: str | None) -> None:
@@ -63,14 +74,13 @@ def _reload_runtime_modules() -> None:
     importlib.reload(mcp_server)
 
 
-def _build_prepared_http_app(monkeypatch, **env: str | None):
+def _bootstrap_production_http_server(monkeypatch, **env: str | None):
+    """Mirror mcp_server production startup: create_server + prepare_http_stack."""
     _apply_env(monkeypatch, **env)
     _reload_runtime_modules()
-    from mcp_server import build_app, prepare_http_stack
+    from mcp_server import bootstrap_http_server
 
-    server, auth_provider = build_app()
-    prepare_http_stack(server, auth_provider)
-    return server, auth_provider
+    return bootstrap_http_server()
 
 
 async def _request(
@@ -93,6 +103,11 @@ async def _request(
         )
 
 
+async def _request_with_session(server, app, method: str, path: str, **kwargs) -> httpx.Response:
+    async with server._session_manager.run():
+        return await _request(app, method, path, **kwargs)
+
+
 def test_production_static_without_token_fails_to_start(monkeypatch):
     _apply_env(
         monkeypatch,
@@ -101,102 +116,72 @@ def test_production_static_without_token_fails_to_start(monkeypatch):
         MCP_API_TOKEN=None,
     )
     _reload_runtime_modules()
-    from mcp_server import build_app, prepare_http_stack
+    from mcp_server import create_auth_provider, create_server, prepare_http_stack
 
-    server, auth_provider = build_app()
+    auth_provider = create_auth_provider()
+    server = create_server(auth_provider)
     assert auth_provider.mode == "static"
 
     with pytest.raises(RuntimeError, match="MCP_AUTH_MODE=static requires MCP_API_TOKEN"):
         prepare_http_stack(server, auth_provider)
 
 
-def _middleware_type_name(app) -> str:
-    return type(app).__name__
-
-
-async def _request_with_session(server, app, method: str, path: str, **kwargs) -> httpx.Response:
-    async with server._session_manager.run():
-        return await _request(app, method, path, **kwargs)
-
-
 def test_http_middleware_wrapper_order(monkeypatch):
-    server, _auth_provider = _build_prepared_http_app(
-        monkeypatch,
-        TASKS_BRIDGE_DEPLOYMENT="production",
-        MCP_AUTH_MODE="static",
-        MCP_API_TOKEN="integration-secret",
+    server, _auth_provider = _bootstrap_production_http_server(
+        monkeypatch, **_PRODUCTION_STATIC_ENV
     )
 
     app = server.streamable_http_app()
-    assert _middleware_type_name(app) == "BearerAuthASGI"
-    assert _middleware_type_name(app.app) == "ProductionSecurityASGI"
+    assert type(app).__name__ == "BearerAuthASGI"
+    assert type(app.app).__name__ == "ProductionSecurityASGI"
 
 
-def test_wrong_bearer_token_returns_401(monkeypatch):
-    server, _auth_provider = _build_prepared_http_app(
-        monkeypatch,
-        TASKS_BRIDGE_DEPLOYMENT="production",
-        MCP_AUTH_MODE="static",
-        MCP_API_TOKEN="integration-secret",
+def test_production_http_startup_path_auth_and_health(monkeypatch):
+    """Uses create_server() and the real production bootstrap path (not manual middleware)."""
+    server, auth_provider = _bootstrap_production_http_server(
+        monkeypatch, **_PRODUCTION_STATIC_ENV
     )
+    assert auth_provider.mode == "static"
+
     app = server.streamable_http_app()
 
-    response = asyncio.run(
+    no_token = asyncio.run(
+        _request(app, "POST", "/mcp", headers=_MCP_HEADERS, json_body=_INITIALIZE_BODY)
+    )
+    assert no_token.status_code == 401
+    assert no_token.json() == {"error": "Unauthorized"}
+    assert no_token.headers.get("www-authenticate") == 'Bearer realm="Tasks Bridge MCP"'
+
+    wrong_token = asyncio.run(
         _request(
             app,
             "POST",
             "/mcp",
-            headers={"Authorization": "Bearer wrong-token"},
+            headers={**_MCP_HEADERS, "Authorization": "Bearer wrong-token"},
             json_body=_INITIALIZE_BODY,
         )
     )
+    assert wrong_token.status_code == 401
+    assert wrong_token.json() == {"error": "Unauthorized"}
 
-    assert response.status_code == 401
-    assert response.json() == {"error": "Unauthorized"}
-    assert response.headers.get("www-authenticate") == 'Bearer realm="Tasks Bridge MCP"'
-
-
-def test_correct_bearer_token_reaches_mcp_endpoint(monkeypatch):
-    server, _auth_provider = _build_prepared_http_app(
-        monkeypatch,
-        TASKS_BRIDGE_DEPLOYMENT="production",
-        MCP_AUTH_MODE="static",
-        MCP_API_TOKEN="integration-secret",
-    )
-    app = server.streamable_http_app()
-
-    response = asyncio.run(
+    valid_token = asyncio.run(
         _request_with_session(
             server,
             app,
             "POST",
             "/mcp",
             headers={
+                **_MCP_HEADERS,
                 "Authorization": "Bearer integration-secret",
-                "Content-Type": "application/json",
-                "Accept": "application/json, text/event-stream",
             },
             json_body=_INITIALIZE_BODY,
         )
     )
+    assert valid_token.status_code == 200
+    assert "result" in valid_token.text or "event:" in valid_token.text
 
-    assert response.status_code == 200
-    body = response.text
-    assert "result" in body or "event:" in body
-
-
-def test_health_accessible_without_authentication(monkeypatch):
-    server, _auth_provider = _build_prepared_http_app(
-        monkeypatch,
-        TASKS_BRIDGE_DEPLOYMENT="production",
-        MCP_AUTH_MODE="static",
-        MCP_API_TOKEN="integration-secret",
-    )
-    app = server.streamable_http_app()
-
-    response = asyncio.run(_request(app, "GET", "/health"))
-
-    assert response.status_code == 200
-    payload = response.json()
+    health = asyncio.run(_request(app, "GET", "/health"))
+    assert health.status_code == 200
+    payload = health.json()
     assert payload["status"] == "ok"
     assert payload["deployment"] == "production"

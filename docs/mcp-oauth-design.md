@@ -157,7 +157,7 @@ Static bearer and OAuth must **not** both wrap `/mcp`.
 |---|---|
 | [bridge/auth/oauth.py](../bridge/auth/oauth.py) | Future OAuth mode — IdP-backed resource server preferred |
 | [bridge/auth/static_bearer.py](../bridge/auth/static_bearer.py) | Today’s Railway inbound auth |
-| [http_security.py](../http_security.py) | Rate/size limits only |
+| [bridge/transport/http_security.py](../bridge/transport/http_security.py) | Rate/size limits only |
 | [mcp_server.py](../mcp_server.py) | `create_server(auth_provider=…)` |
 | [docs/railway.md](railway.md) | Client access paths; link here |
 
