@@ -65,10 +65,13 @@ async def _send_json(send, *, status: int, body: dict[str, str]) -> None:
 class ProductionSecurityASGI:
     """Rate limits, request-size limits, and error shielding for MCP HTTP traffic.
 
-    Rate limits are tracked **per process** in memory (keyed by client IP from
-    the ASGI scope). Behind a reverse proxy or on Railway, many clients may
-    share one proxy IP — adjust ``MCP_RATE_LIMIT_*`` or terminate TLS at the
-    app when tuning limits.
+    Rate limits are a **basic abuse guard only** — not authorization and not
+    precise per-user quotas. Limits are tracked **per process** in memory,
+    keyed by client IP from the ASGI scope. Behind a reverse proxy or on
+    Railway, many callers may share one proxy IP, and multiple Railway
+    replicas each keep separate counters (not a durable distributed limit).
+    Tune ``MCP_RATE_LIMIT_*`` accordingly; rely on ``MCP_API_TOKEN`` for access
+    control on public endpoints.
     """
 
     def __init__(self, app, *, mcp_path: str) -> None:

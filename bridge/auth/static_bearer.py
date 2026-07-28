@@ -115,7 +115,9 @@ class StaticBearerAuthProvider(AuthProvider):
     def install_http_auth(self, fastmcp: FastMCP, *, mcp_path: str) -> None:
         token = config.MCP_API_TOKEN
         if not token:
-            return
+            raise RuntimeError(
+                "Static bearer authentication cannot be installed without MCP_API_TOKEN."
+            )
 
         original_streamable_http_app = fastmcp.streamable_http_app
 

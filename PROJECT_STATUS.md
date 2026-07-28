@@ -1,7 +1,7 @@
 # Project Status
 
-* **Last updated:** July 27, 2026 21:20 ET (v1.6.1 docs + startup `.env` loading)
-* **Server version:** `1.6.1` (`bridge/diagnostics/`)
+* **Last updated:** July 27, 2026 21:25 ET (v1.6.2 — fail-fast install_http_auth)
+* **Server version:** `1.6.2` (`bridge/diagnostics/`)
 * **License:** MIT
 * **Deployment modes:** `local` (default) | `production` (Railway via env)
 * **Inbound auth modes:** `none` (local) | `static` (Railway bearer) | `oauth` (exploratory stub)
@@ -108,8 +108,8 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 ## Recent result
 
-v1.6.1 shipped: static bearer requires `MCP_API_TOKEN` (local + Railway); case-insensitive `Bearer`; 401 + `WWW-Authenticate`; `test_static_bearer.py`; macOS MCP Server window sources `.env`; `--status` sends bearer when static; docs cover Inspector Custom Headers and tunnel vs static auth.
+v1.6.2: `install_http_auth` fails fast if `MCP_API_TOKEN` is missing (no silent skip). Prior v1.6.1 static bearer hardening and docs remain in place.
 
 ## Next action
 
-First Railway deploy with `MCP_AUTH_MODE=static` + `MCP_API_TOKEN`, or revert local `.env` to `none` for ChatGPT tunnel daily use.
+Restart MCP to pick up v1.6.2: `./start_tasks_bridge.sh --stop` then `./start_tasks_bridge.sh`

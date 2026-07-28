@@ -27,6 +27,16 @@ Use `.env.example` and `credentials.json.example` as templates only.
 - The server runs headless — no browser OAuth on the container.
 - Task titles and notes pass through MCP responses; treat logs as potentially sensitive.
 
+## Rate limiting (Railway / production)
+
+`/mcp` rate limits in `bridge/transport/http_security.py` are intentionally **simple**:
+
+- **Keyed by** ASGI client IP (per process, in memory)
+- **Not** durable across restarts or Railway replicas
+- **Proxy-sensitive** — Railway’s edge may collapse many callers into one shared IP
+
+For this **single-user** bridge, that is acceptable. Treat rate limits as a **basic abuse guard** (runaway clients, accidental loops), **not** as strong authorization or per-user quotas. **Access control** on public HTTPS is `MCP_AUTH_MODE=static` + `MCP_API_TOKEN`.
+
 ## Local
 
 - `token.json` stays on your machine only.

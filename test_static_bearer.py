@@ -105,3 +105,24 @@ def test_static_mode_requires_token_locally(monkeypatch):
     provider = StaticBearerAuthProvider()
     with pytest.raises(RuntimeError, match="MCP_AUTH_MODE=static requires MCP_API_TOKEN"):
         provider.validate_deployment()
+
+
+def test_install_http_auth_requires_token(monkeypatch):
+    monkeypatch.delenv("MCP_API_TOKEN", raising=False)
+
+    import importlib
+
+    import bridge.config as bridge_config
+    from bridge.auth.static_bearer import StaticBearerAuthProvider
+
+    importlib.reload(bridge_config)
+    provider = StaticBearerAuthProvider()
+
+    class _FakeFastMCP:
+        streamable_http_app = lambda self: None  # noqa: E731
+
+    with pytest.raises(
+        RuntimeError,
+        match="Static bearer authentication cannot be installed without MCP_API_TOKEN",
+    ):
+        provider.install_http_auth(_FakeFastMCP(), mcp_path="/mcp")

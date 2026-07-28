@@ -79,7 +79,7 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 ### Rate limits (per-process, proxy-sensitive)
 
-`/mcp` rate limits are enforced **in memory per server process**, keyed by the client IP on the ASGI connection. On Railway, traffic often arrives through a **shared proxy IP**, so many distinct clients can count against the same bucket. Tune `MCP_RATE_LIMIT_REQUESTS` / `MCP_RATE_LIMIT_WINDOW_SECONDS` accordingly, or treat limits as a best-effort guard rather than per-user quotas.
+`/mcp` rate limits are enforced **in memory per server process**, keyed by the client IP on the ASGI connection. On Railway, traffic often arrives through a **shared proxy IP**, so many distinct clients can count against the same bucket; replicas do not share counters. For this single-user service, treat limits as a **basic abuse guard** — tune `MCP_RATE_LIMIT_REQUESTS` / `MCP_RATE_LIMIT_WINDOW_SECONDS` if needed, but rely on **`MCP_API_TOKEN`** for real access control.
 
 ## 3. Deploy
 
