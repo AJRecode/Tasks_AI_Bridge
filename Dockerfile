@@ -14,8 +14,10 @@ RUN groupadd --system --gid 10001 appgroup \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY config.py bridge_diagnostics.py google_auth.py google_tasks.py \
-     http_security.py mcp_server.py task_services.py auth/ ./
+COPY bridge/ ./bridge/
+COPY services/ ./services/
+COPY mcp_server.py config.py bridge_diagnostics.py http_security.py \
+     task_services.py google_auth.py google_tasks.py auth/ ./
 
 RUN chown -R appuser:appgroup /app
 USER appuser

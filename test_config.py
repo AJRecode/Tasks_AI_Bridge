@@ -1,6 +1,7 @@
-"""Unit tests for config.py (no Google API, no secrets)."""
+"""Unit tests for bridge.config (no Google API, no secrets)."""
 
 import importlib
+import os
 import sys
 
 
@@ -14,19 +15,13 @@ def _reload_config(**env):
         "PORT",
     ):
         if key not in env:
-            import os
-
             os.environ.pop(key, None)
-    import os
-
     for key, value in env.items():
         if value is None:
             os.environ.pop(key, None)
         else:
             os.environ[key] = value
-    if "config" in sys.modules:
-        return importlib.reload(sys.modules["config"])
-    import config
+    import bridge.config as config
 
     return importlib.reload(config)
 

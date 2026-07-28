@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from auth.base import AuthProvider
+from bridge.auth.base import AuthProvider
 
 
 class OAuthAuthProvider(AuthProvider):

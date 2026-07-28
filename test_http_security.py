@@ -12,9 +12,8 @@ import httpx
 import pytest
 
 import config
-import http_security
-from auth.static_bearer import BearerAuthASGI
-from http_security import ProductionSecurityASGI
+from bridge.auth.static_bearer import BearerAuthASGI
+from bridge.transport.http_security import ProductionSecurityASGI
 
 
 async def _post_mcp(app, *, headers: dict[str, str] | None = None) -> httpx.Response:
@@ -47,11 +46,15 @@ def _reload_security_modules(monkeypatch, **env: str | None) -> None:
             monkeypatch.delenv(key, raising=False)
         else:
             monkeypatch.setenv(key, value)
+    import bridge.config as config
+
     importlib.reload(config)
-    if "http_security" in sys.modules:
-        importlib.reload(http_security)
+    if "config" in sys.modules:
+        importlib.reload(sys.modules["config"])
+    import bridge.transport.http_security as http_security
+    importlib.reload(http_security)
     for module_name in list(sys.modules):
-        if module_name.startswith("auth."):
+        if module_name.startswith("bridge.auth"):
             importlib.reload(sys.modules[module_name])
 
 
@@ -99,7 +102,7 @@ def test_unauthenticated_mcp_does_not_call_google(monkeypatch):
     )
 
     async def inner_app(scope, receive, send):
-        import google_auth
+        import services.tasks.google_auth as google_auth
 
         google_auth.get_credentials()
         await send(
@@ -112,7 +115,7 @@ def test_unauthenticated_mcp_does_not_call_google(monkeypatch):
         await send({"type": "http.response.body", "body": b"{}"})
 
     app = _protected_mcp_app(inner_app)
-    with patch("google_auth.get_credentials") as google_mock:
+    with patch("services.tasks.google_auth.get_credentials") as google_mock:
         response = asyncio.run(_post_mcp(app))
 
     assert response.status_code == 401

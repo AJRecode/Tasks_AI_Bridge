@@ -14,7 +14,7 @@ This document captures **open questions** about letting ChatGPT connect to Tasks
 | **Railway + static bearer** | **Works now** | `MCP_AUTH_MODE=static` — curl, scanners, Inspector, custom clients; **not** ChatGPT UI |
 | **Railway + OAuth** | **Uncertain / planned** | Requires MCP-standard OAuth; approach TBD |
 
-Inbound auth modes in code: `none` | `static` | `oauth` ([auth/](../auth/)). Only `none` and `static` are implemented. `oauth` fails fast until a deliberate choice is made.
+Inbound auth modes in code: `none` | `static` | `oauth` ([bridge/auth/](../bridge/auth/)). Only `none` and `static` are implemented. `oauth` fails fast until a deliberate choice is made.
 
 ## Problem statement
 
@@ -26,7 +26,7 @@ Inbound auth modes in code: `none` | `static` | `oauth` ([auth/](../auth/)). Onl
 
 **ChatGPT today:** OpenAI tunnel → `localhost:8000/mcp`.
 
-**Railway today:** `MCP_AUTH_MODE=static` bearer on `/mcp` ([auth/static_bearer.py](../auth/static_bearer.py)).
+**Railway today:** `MCP_AUTH_MODE=static` bearer on `/mcp` ([bridge/auth/static_bearer.py](../bridge/auth/static_bearer.py)).
 
 **Possible future goal:** ChatGPT uses `https://<app>.up.railway.app/mcp` directly — **only if** we find a practical OAuth path that does not turn this single-user bridge into an auth product.
 
@@ -73,7 +73,7 @@ Our dependency `mcp>=1.28.1` / FastMCP supports resource-server patterns:
 
 It also supports mounting a **local authorization server** (`auth_server_provider=…`). That path exists in the SDK but is **not the preferred direction** for this project unless external IdP integration is ruled out.
 
-When `MCP_AUTH_MODE=oauth` is implemented, wire through [auth/oauth.py](../auth/oauth.py) — not by extending [http_security.py](../http_security.py).
+When `MCP_AUTH_MODE=oauth` is implemented, wire through [bridge/auth/oauth.py](../bridge/auth/oauth.py) — not by extending [bridge/transport/http_security.py](../bridge/transport/http_security.py).
 
 Google Tasks OAuth (`GOOGLE_*`) stays **separate** — it authorizes the server to Google. MCP OAuth would authorize **clients to your MCP server**.
 
@@ -126,8 +126,8 @@ Exact URLs and env vars depend on the IdP chosen — **not specified here**.
 | `MCP_AUTH_MODE` | Use case | Behavior |
 |---|---|---|
 | `none` | Local dev (default) | No inbound auth on `/mcp` |
-| `static` | Railway / scripts | Bearer via [auth/static_bearer.py](../auth/static_bearer.py) |
-| `oauth` | ChatGPT + Railway HTTPS (TBD) | Stub in [auth/oauth.py](../auth/oauth.py) — not implemented |
+| `static` | Railway / scripts | Bearer via [bridge/auth/static_bearer.py](../bridge/auth/static_bearer.py) |
+| `oauth` | ChatGPT + Railway HTTPS (TBD) | Stub in [bridge/auth/oauth.py](../bridge/auth/oauth.py) — not implemented |
 
 Static bearer and OAuth must **not** both wrap `/mcp`.
 
@@ -147,7 +147,7 @@ Static bearer and OAuth must **not** both wrap `/mcp`.
 
 ### Phase 2 — Implement only if Phase 1 passes
 
-- [ ] Wire `auth/oauth.py` to chosen IdP (resource server only)
+- [ ] Wire `bridge/auth/oauth.py` to chosen IdP (resource server only)
 - [ ] Env vars, Railway checklist, tests for metadata + 401 shape
 - [ ] Revisit whether built-in AS (Option B) is still needed — default **no**
 
@@ -155,8 +155,8 @@ Static bearer and OAuth must **not** both wrap `/mcp`.
 
 | Component | Role |
 |---|---|
-| [auth/oauth.py](../auth/oauth.py) | Future OAuth mode — IdP-backed resource server preferred |
-| [auth/static_bearer.py](../auth/static_bearer.py) | Today’s Railway inbound auth |
+| [bridge/auth/oauth.py](../bridge/auth/oauth.py) | Future OAuth mode — IdP-backed resource server preferred |
+| [bridge/auth/static_bearer.py](../bridge/auth/static_bearer.py) | Today’s Railway inbound auth |
 | [http_security.py](../http_security.py) | Rate/size limits only |
 | [mcp_server.py](../mcp_server.py) | `create_server(auth_provider=…)` |
 | [docs/railway.md](railway.md) | Client access paths; link here |

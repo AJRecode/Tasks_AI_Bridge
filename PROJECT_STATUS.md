@@ -1,14 +1,14 @@
 # Project Status
 
-* **Last updated:** July 27, 2026 (OAuth doc: exploratory, external IdP first)
-* **Server version:** `1.6.0` (`bridge_diagnostics.py`)
+* **Last updated:** July 27, 2026 (package layout: bridge/ + services/tasks/)
+* **Server version:** `1.6.0` (`bridge/diagnostics/`)
 * **License:** MIT
 * **Deployment modes:** `local` (default) | `production` (Railway via env)
 * **Inbound auth modes:** `none` (local) | `static` (Railway bearer) | `oauth` (exploratory stub)
 
 ## Summary
 
-Tasks Bridge exposes **Google Tasks** to AI tools (ChatGPT, Cursor) through an MCP server. One Python codebase runs locally (native `.venv`) or on Railway (Docker). Inbound MCP auth is selected via `MCP_AUTH_MODE`: **none** for local dev, **static** bearer for Railway scripts/clients, **oauth** exploratory stub for a possible ChatGPT + HTTPS path (external IdP preferred — not a custom auth server). **ChatGPT today** uses the OpenAI Secure MCP Tunnel to localhost.
+Tasks Bridge is an **MCP bridge host** (`bridge/`) with pluggable **services** (Google Tasks today). One Python codebase runs locally (native `.venv`) or on Railway (Docker).
 
 ## Architecture
 
@@ -19,7 +19,8 @@ ChatGPT  →  OpenAI tunnel  ←  tunnel-client  ←  http://127.0.0.1:8000/mcp 
 Cursor   →  http://127.0.0.1:8000/mcp
 Dev      →  MCP Inspector → http://127.0.0.1:8000/mcp
                               ↓
-                    task_services.py  →  google_tasks.py / google_auth.py  →  Google Tasks API
+                    bridge/ (auth, transport, diagnostics)
+                    services/tasks/  →  Google Tasks API
 ```
 
 ### Production (Railway)
@@ -53,8 +54,8 @@ GitHub  →  Railway  →  https://<app>.up.railway.app/mcp  →  curl / Inspect
 | Local orchestration | `./start_tasks_bridge.sh --status` (tunnel idle = UP, not STALE) |
 | Railway artifacts | `Dockerfile`, `railway.toml`, `/health` route |
 | GitHub CI | `.github/workflows/ci.yml` — pytest, pip-audit, bandit on push/PR |
-| Inbound auth | `auth/` — `none` / `static` / `oauth` (stub); bearer before handler |
-| HTTP hardening | `http_security.py` — rate/size limits, error shield (production) |
+| Inbound auth | `bridge/auth/` — `none` / `static` / `oauth` (stub) |
+| HTTP hardening | `bridge/transport/` — rate/size limits, error shield |
 | Dependabot | `.github/dependabot.yml` — weekly pip, Docker, Actions updates |
 
 ## Runtime status
@@ -77,14 +78,16 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 ## Key files
 
-| File | Role |
+| Path | Role |
 |---|---|
-| `mcp_server.py` | `create_server(auth_provider)` — FastMCP, `/health`, MCP tools |
-| `auth/` | Inbound auth modes: `none`, `static_bearer`, `oauth` (stub), `factory` |
-| `http_security.py` | Rate limits, request-size limits, error shield (no auth) |
-| `config.py` | Local vs production settings, `MCP_AUTH_MODE` |
-| `google_auth.py` | File OAuth (local) or env vars (Railway) |
-| `start_tasks_bridge.sh` | Local orchestration only |
+| `mcp_server.py` | Entry point — `create_server(auth_provider)` |
+| `bridge/auth/` | Inbound auth modes |
+| `bridge/config/` | Deployment settings |
+| `bridge/diagnostics/` | Version, schema hash |
+| `bridge/logging/` | MCP discovery logging |
+| `bridge/transport/` | HTTP hardening, transport security |
+| `services/tasks/` | Google Tasks MCP tools + API adapters |
+| `start_tasks_bridge.sh` | Local orchestration |
 | `Dockerfile` / `railway.toml` | Railway production deploy |
 | `docs/local-dev.md` | Local setup |
 | `docs/railway.md` | Railway deploy |
@@ -103,8 +106,8 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 ## Recent result
 
-OAuth doc reframed as exploratory: evaluate external IdP (resource server only) before any custom authorization server. Tunnel remains the practical ChatGPT path.
+Reorganized into **bridge host** (`bridge/`) + **services** (`services/tasks/`). Root shims (`config.py`, `task_services.py`, etc.) remain for compatibility. All 20 unit tests pass.
 
 ## Next action
 
-No restart needed (docs + error message only). Commit when ready.
+Restart MCP after pull: `./start_tasks_bridge.sh`

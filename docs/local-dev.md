@@ -9,7 +9,7 @@ Cursor   →  http://127.0.0.1:8000/mcp
 ChatGPT  →  OpenAI tunnel  ←  tunnel-client  ←  http://127.0.0.1:8000/mcp
 Dev      →  MCP Inspector (:6274) → http://127.0.0.1:8000/mcp
                               ↓
-                    task_services.py  →  Google Tasks API
+                    bridge/ + services/tasks/  →  Google Tasks API
 ```
 
 ## Platform support

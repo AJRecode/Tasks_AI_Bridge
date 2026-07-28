@@ -121,16 +121,29 @@ Set `MCP_API_TOKEN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REF
 
 ## Project layout
 
-| File | Purpose |
+Bridge host (shared MCP infrastructure) and pluggable services:
+
+```
+bridge/
+  auth/          inbound MCP auth (none | static | oauth)
+  config/        deployment settings
+  diagnostics/   version, schema hash
+  logging/       MCP discovery logging
+  transport/     HTTP hardening, DNS rebinding settings
+
+services/
+  tasks/         Google Tasks tools (today's MCP surface)
+
+mcp_server.py    entry point — wires bridge + services.tasks
+start_tasks_bridge.sh   local orchestration (not deployed to Railway)
+```
+
+| Path | Purpose |
 |---|---|
-| `mcp_server.py` | FastMCP HTTP/stdio entry point; `create_server(auth_provider)` |
-| `auth/` | Inbound MCP auth modes (`none`, `static`, `oauth` stub) |
-| `task_services.py` | Business logic and list-name resolution |
-| `google_tasks.py` | Google Tasks API adapter |
-| `google_auth.py` | OAuth (local files or env vars) |
-| `config.py` | Local vs production settings |
-| `bridge_diagnostics.py` | Version, schema hash, discovery logging |
-| `start_tasks_bridge.sh` | Local orchestration — `--windows` on macOS; `--http`/`--tunnel` elsewhere; not used on Railway |
+| `mcp_server.py` | Entry point; `create_server(auth_provider)` |
+| `bridge/` | Shared bridge host (auth, config, diagnostics, transport, logging) |
+| `services/tasks/` | Google Tasks MCP tools and API adapters |
+| `start_tasks_bridge.sh` | Local orchestration — macOS default: 3 compact Terminal windows |
 
 ## Google OAuth
 

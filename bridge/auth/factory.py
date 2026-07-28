@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import config
-from auth.base import AuthProvider
-from auth.none import NoneAuthProvider
-from auth.oauth import OAuthAuthProvider
-from auth.static_bearer import StaticBearerAuthProvider
+from bridge import config
+from bridge.auth.base import AuthProvider
+from bridge.auth.none import NoneAuthProvider
+from bridge.auth.oauth import OAuthAuthProvider
+from bridge.auth.static_bearer import StaticBearerAuthProvider
 
 _AUTH_MODES = {"none", "static", "oauth"}
 

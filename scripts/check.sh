@@ -26,7 +26,7 @@ echo "==> pip-audit"
 pip-audit -r requirements.txt
 
 echo "==> bandit"
-bandit -r auth config.py bridge_diagnostics.py google_auth.py google_tasks.py http_security.py mcp_server.py task_services.py \
+bandit -r bridge services mcp_server.py \
   -s B104,B603,B607,B404,B110,B106
 
 echo ""

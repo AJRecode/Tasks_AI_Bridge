@@ -20,24 +20,23 @@ import logging
 import os
 import socket
 import sys
-from urllib.parse import urlparse
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-import config
-from auth.base import AuthProvider
-from auth.factory import create_auth_provider, validate_deployment
-from bridge_diagnostics import (
-    build_diagnostics,
-    install_discovery_logging,
-    log_startup_banner,
+from bridge import config
+from bridge.auth.base import AuthProvider
+from bridge.auth.factory import create_auth_provider, validate_deployment
+from bridge.diagnostics import build_diagnostics
+from bridge.logging import install_discovery_logging, log_startup_banner
+from bridge.transport import (
+    build_transport_security,
+    install_http_security,
+    production_safe_tool_error,
 )
-from http_security import install_http_security, production_safe_tool_error
 from mcp.server.fastmcp import FastMCP
-from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
-from task_services import (
+from services.tasks import (
     complete_task as mark_task_complete,
     create_task as add_task,
     create_task_list as add_task_list,
@@ -48,55 +47,6 @@ from task_services import (
     search_tasks as find_tasks,
     update_task as modify_task,
 )
-
-CHATGPT_ORIGINS = config.CHATGPT_ORIGINS
-
-
-def _normalize_public_host(value: str) -> str:
-    value = value.strip()
-    if not value:
-        return ""
-
-    if "://" in value:
-        parsed = urlparse(value)
-        return parsed.netloc or parsed.path.split("/")[0]
-
-    return value.split("/")[0]
-
-
-def _host_allowlist(*hosts: str) -> list[str]:
-    allowlist: list[str] = []
-    for host in hosts:
-        if not host:
-            continue
-        allowlist.append(host)
-        if not host.endswith(":*"):
-            allowlist.append(f"{host}:*")
-    return allowlist
-
-
-def _build_transport_security() -> TransportSecuritySettings | None:
-    public_host = _normalize_public_host(config.PUBLIC_HOST)
-
-    if not public_host:
-        return None
-
-    return TransportSecuritySettings(
-        enable_dns_rebinding_protection=True,
-        allowed_hosts=_host_allowlist(
-            "127.0.0.1",
-            "localhost",
-            public_host,
-        ),
-        allowed_origins=[
-            "http://127.0.0.1:*",
-            "http://localhost:*",
-            f"https://{public_host}",
-            f"https://{public_host}:*",
-            *CHATGPT_ORIGINS,
-        ],
-    )
-
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True)
 WRITE_BOUNDED = ToolAnnotations(
@@ -227,7 +177,7 @@ def create_server(auth_provider: AuthProvider) -> FastMCP:
         port=config.PORT,
         streamable_http_path=config.MCP_PATH,
         stateless_http=True,
-        transport_security=_build_transport_security(),
+        transport_security=build_transport_security(),
         **auth_provider.fastmcp_kwargs(),
     )
     _register_tools(server)

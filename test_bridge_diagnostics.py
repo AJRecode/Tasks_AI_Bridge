@@ -1,12 +1,12 @@
 """Tests for bridge_diagnostics (no Google API)."""
 
-from bridge_diagnostics import (
+from bridge.diagnostics import (
     SERVER_VERSION,
     build_diagnostics,
     compute_schema_hash,
-    connection_id_from_http,
     ordered_tool_names,
 )
+from bridge.logging import connection_id_from_http
 from mcp.server.fastmcp.tools.tool_manager import ToolManager
 
 

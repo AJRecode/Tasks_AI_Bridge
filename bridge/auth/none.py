@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import config
-from auth.base import AuthProvider
+from bridge import config
+from bridge.auth.base import AuthProvider
 
 
 class NoneAuthProvider(AuthProvider):

@@ -6,8 +6,8 @@ import logging
 import secrets
 from typing import TYPE_CHECKING, Any
 
-import config
-from auth.base import AuthProvider
+from bridge import config
+from bridge.auth.base import AuthProvider
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp.server import FastMCP
