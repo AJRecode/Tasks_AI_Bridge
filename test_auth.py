@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-import config
+import bridge.config as config
 from bridge.auth.factory import create_auth_provider, resolve_auth_mode, validate_deployment
 from bridge.auth.static_bearer import StaticBearerAuthProvider
 
@@ -35,8 +35,6 @@ def _reload_config(monkeypatch, **env: str | None):
     import bridge.config as config
 
     importlib.reload(config)
-    if "config" in sys.modules:
-        importlib.reload(sys.modules["config"])
     for module_name in list(sys.modules):
         if module_name.startswith("bridge.auth") or module_name == "bridge.config":
             importlib.reload(sys.modules[module_name])

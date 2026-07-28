@@ -31,7 +31,7 @@ from bridge.diagnostics import build_diagnostics
 from bridge.logging import install_discovery_logging, log_startup_banner
 from bridge.transport import (
     build_transport_security,
-    install_http_security,
+    install_http_middleware_stack,
     production_safe_tool_error,
 )
 from mcp.server.fastmcp import FastMCP
@@ -184,8 +184,29 @@ def create_server(auth_provider: AuthProvider) -> FastMCP:
     return server
 
 
-auth_provider = create_auth_provider(config.auth_mode())
-mcp = create_server(auth_provider)
+def build_app() -> tuple[FastMCP, AuthProvider]:
+    """Create FastMCP and the resolved inbound auth provider from current config."""
+    auth_provider = create_auth_provider()
+    server = create_server(auth_provider)
+    return server, auth_provider
+
+
+def prepare_http_stack(server: FastMCP, auth_provider: AuthProvider) -> None:
+    """Validate deployment and install HTTP middleware (Bearer → Security → FastMCP)."""
+    validate_deployment(auth_provider)
+    install_http_middleware_stack(
+        server,
+        auth_provider,
+        mcp_path=config.MCP_PATH,
+    )
+
+
+def _run_stdio() -> None:
+    server, _auth_provider = build_app()
+    install_discovery_logging(server, mcp_path=config.MCP_PATH)
+    log_startup_banner(server._tool_manager)
+    print("Tasks Bridge running on stdio.")
+    server.run(transport="stdio")
 
 
 def _port_in_use(host: str, port: int) -> bool:
@@ -209,13 +230,6 @@ def _report_already_running() -> None:
         print("Nothing to do.")
 
 
-def _run_stdio() -> None:
-    install_discovery_logging(mcp, mcp_path=config.MCP_PATH)
-    log_startup_banner(mcp._tool_manager)
-    print("Tasks Bridge running on stdio.")
-    mcp.run(transport="stdio")
-
-
 def _run_http() -> None:
     bind_host = "127.0.0.1" if config.HOST in {"0.0.0.0", "::"} else config.HOST
     if not config.IS_PRODUCTION and _port_in_use(bind_host, config.PORT):
@@ -226,11 +240,10 @@ def _run_http() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
-    validate_deployment(auth_provider)
-    install_discovery_logging(mcp, mcp_path=config.MCP_PATH)
-    install_http_security(mcp, mcp_path=config.MCP_PATH)
-    auth_provider.install_http_auth(mcp, mcp_path=config.MCP_PATH)
-    log_startup_banner(mcp._tool_manager)
+    server, auth_provider = build_app()
+    prepare_http_stack(server, auth_provider)
+    install_discovery_logging(server, mcp_path=config.MCP_PATH)
+    log_startup_banner(server._tool_manager)
 
     print(f"Deployment: {config.DEPLOYMENT}")
     print(f"Auth mode: {auth_provider.mode}")
@@ -244,7 +257,7 @@ def _run_http() -> None:
     else:
         print("Local HTTP mode. ChatGPT tunnel: see docs/local-dev.md.")
 
-    mcp.run(transport="streamable-http")
+    server.run(transport="streamable-http")
 
 
 def main() -> None:

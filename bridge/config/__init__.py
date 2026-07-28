@@ -1,4 +1,8 @@
-"""Environment-based configuration for local dev and production (e.g. Railway)."""
+"""Environment-based configuration for local dev and production (e.g. Railway).
+
+This is the **canonical** configuration module. Import via ``from bridge import config``
+or ``from bridge.config import ...``. The repo-root ``config.py`` is a compatibility shim.
+"""
 
 from __future__ import annotations
 

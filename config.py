@@ -1,2 +1,2 @@
-"""Compatibility shim — prefer ``from bridge.config import ...``."""
+"""Compatibility shim — prefer ``from bridge import config`` or ``from bridge.config import ...``."""
 from bridge.config import *  # noqa: F403

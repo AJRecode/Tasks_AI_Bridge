@@ -11,7 +11,6 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-import config
 from bridge.auth.static_bearer import BearerAuthASGI
 from bridge.transport.http_security import ProductionSecurityASGI
 
@@ -49,8 +48,6 @@ def _reload_security_modules(monkeypatch, **env: str | None) -> None:
     import bridge.config as config
 
     importlib.reload(config)
-    if "config" in sys.modules:
-        importlib.reload(sys.modules["config"])
     import bridge.transport.http_security as http_security
     importlib.reload(http_security)
     for module_name in list(sys.modules):

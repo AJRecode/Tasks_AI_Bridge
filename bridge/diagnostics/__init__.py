@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from mcp.server.fastmcp.tools.tool_manager import ToolManager
 
 # Bump when tool schemas, MCP surface, or security behavior changes.
-SERVER_VERSION = "1.6.2"
+SERVER_VERSION = "1.6.3"
 
 STARTED_AT = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
