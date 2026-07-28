@@ -1,10 +1,22 @@
-# MCP endpoint OAuth design (ChatGPT + Railway)
+# MCP endpoint OAuth — exploration (ChatGPT + Railway)
 
-This document describes a **minimal OAuth 2.1 flow** so ChatGPT can connect to Tasks Bridge over **public HTTPS** (Railway) without static bearer tokens — which the ChatGPT connector UI does not support today.
+**Status:** Exploratory / not committed. No implementation yet.
 
-**Status:** Design / roadmap (not implemented yet).
+This document captures **open questions** about letting ChatGPT connect to Tasks Bridge over **public HTTPS** (Railway) without static bearer tokens — which the ChatGPT connector UI does not support today.
 
-## Problem
+**Do not treat this as a fixed build plan.** The right answer may be “keep using the tunnel” or “use an external identity provider” — not a custom authorization server in this repo.
+
+## What works today (certain)
+
+| Path | Status | Notes |
+|---|---|---|
+| **ChatGPT + local tunnel** | **Works now** | [chatgpt-tunnel.md](chatgpt-tunnel.md) → `localhost:8000/mcp` |
+| **Railway + static bearer** | **Works now** | `MCP_AUTH_MODE=static` — curl, scanners, Inspector, custom clients; **not** ChatGPT UI |
+| **Railway + OAuth** | **Uncertain / planned** | Requires MCP-standard OAuth; approach TBD |
+
+Inbound auth modes in code: `none` | `static` | `oauth` ([auth/](../auth/)). Only `none` and `static` are implemented. `oauth` fails fast until a deliberate choice is made.
+
+## Problem statement
 
 | Auth method | ChatGPT connector UI | Cursor localhost | curl / scripts |
 |---|---|---|---|
@@ -12,200 +24,150 @@ This document describes a **minimal OAuth 2.1 flow** so ChatGPT can connect to T
 | MCP OAuth (PKCE) | **Yes** | N/A | Via OAuth dance |
 | OpenAI tunnel | **Yes** (control plane) | Yes | N/A |
 
-Today:
+**ChatGPT today:** OpenAI tunnel → `localhost:8000/mcp`.
 
-- **ChatGPT** → OpenAI tunnel → `localhost:8000/mcp` ([chatgpt-tunnel.md](chatgpt-tunnel.md))
-- **Railway** → `MCP_AUTH_MODE=static` bearer on `/mcp` ([auth/static_bearer.py](../auth/static_bearer.py)) — useful for scanners and generic clients, **not ChatGPT**
+**Railway today:** `MCP_AUTH_MODE=static` bearer on `/mcp` ([auth/static_bearer.py](../auth/static_bearer.py)).
 
-Goal: add MCP-standard OAuth so ChatGPT can use `https://<app>.up.railway.app/mcp` directly.
+**Possible future goal:** ChatGPT uses `https://<app>.up.railway.app/mcp` directly — **only if** we find a practical OAuth path that does not turn this single-user bridge into an auth product.
+
+## Design principle: do not over-engineer OAuth
+
+Tasks Bridge is a **personal bridge**, not an identity platform.
+
+**First question (before any code):** Can we integrate with an **existing, standards-compliant identity provider** (IdP) and run Tasks Bridge as an **OAuth resource server only**?
+
+That means:
+
+- IdP hosts login, MFA, token issuance, and (ideally) authorization-server metadata
+- Tasks Bridge validates access tokens and exposes MCP protected-resource metadata
+- We do **not** own `/authorize`, `/token`, client registration, or token storage unless forced by a spike
+
+Building a bespoke authorization server (even a “minimal” one) is **discouraged** unless external IdP integration fails ChatGPT + MCP requirements in practice.
 
 ## MCP + ChatGPT requirements (spec summary)
 
-ChatGPT follows the [MCP authorization spec](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization) and [OpenAI Apps SDK auth guide](https://developers.openai.com/apps-sdk/build/auth):
+If we pursue Railway HTTPS for ChatGPT, clients expect roughly:
 
-1. **Protected Resource Metadata (RFC 9728)** on the MCP server  
-   - e.g. `GET https://<host>/.well-known/oauth-protected-resource/mcp`  
-   - Returns `resource`, `authorization_servers`, `scopes_supported`
+1. **Protected Resource Metadata (RFC 9728)** on the MCP host  
+   - e.g. `GET https://<host>/.well-known/oauth-protected-resource/mcp`
 
-2. **Authorization Server Metadata (RFC 8414)**  
-   - e.g. `GET https://<host>/.well-known/oauth-authorization-server`  
-   - Returns `authorization_endpoint`, `token_endpoint`, PKCE support, optional `registration_endpoint`
+2. **Authorization Server Metadata (RFC 8414)** — usually on the **IdP**, not necessarily on Tasks Bridge  
+   - e.g. `GET https://<idp>/.well-known/oauth-authorization-server`
 
 3. **OAuth 2.1 authorization code + PKCE (S256)**  
-   - ChatGPT registers dynamically (DCR) or uses CIMD / predefined client  
-   - User completes browser consent  
-   - ChatGPT sends `Authorization: Bearer <access_token>` on MCP requests
+   - ChatGPT may use dynamic client registration (DCR) or a pre-registered client — **compatibility must be verified**
 
-4. **401 + WWW-Authenticate (optional but helpful)**  
-   ```http
-   HTTP/1.1 401 Unauthorized
-   WWW-Authenticate: Bearer resource_metadata="https://<host>/.well-known/oauth-protected-resource/mcp", scope="tasks:read"
-   ```
+4. **401 + WWW-Authenticate (optional)** pointing at resource metadata
 
-ChatGPT may fetch well-known URLs **directly** (without a prior 401). Paths must not be rewritten by proxies (Railway/nginx).
+See [MCP authorization spec](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization) and [OpenAI Apps SDK auth guide](https://developers.openai.com/apps-sdk/build/auth).
 
-## Good news: FastMCP already includes OAuth plumbing
+**Unknown until spiked:** whether ChatGPT accepts a **third-party issuer**, which IdPs work without custom DCR, and whether Railway routing preserves well-known paths.
 
-Our dependency `mcp>=1.28.1` / FastMCP supports:
+## FastMCP capabilities (resource server angle)
+
+Our dependency `mcp>=1.28.1` / FastMCP supports resource-server patterns:
 
 - `auth=AuthSettings(issuer_url=..., resource_server_url=...)`
-- `auth_server_provider=...` → mounts `/authorize`, `/token`, `/register`, metadata routes
-- `token_verifier` → validates bearer tokens on `/mcp`
+- `token_verifier` → validate bearer tokens on `/mcp`
 - Protected resource routes via `create_protected_resource_routes`
 
-We should **prefer FastMCP native auth** via `auth/oauth.py` over extending `http_security.py` when OAuth mode is enabled.
+It also supports mounting a **local authorization server** (`auth_server_provider=…`). That path exists in the SDK but is **not the preferred direction** for this project unless external IdP integration is ruled out.
 
-## Recommended architecture (single-user bridge)
+When `MCP_AUTH_MODE=oauth` is implemented, wire through [auth/oauth.py](../auth/oauth.py) — not by extending [http_security.py](../http_security.py).
 
-For Tasks Bridge, co-locate the **authorization server** and **resource server** on the same Railway host:
+Google Tasks OAuth (`GOOGLE_*`) stays **separate** — it authorizes the server to Google. MCP OAuth would authorize **clients to your MCP server**.
+
+## Options (preference order — all uncertain)
+
+### Option A — External IdP (evaluate first)
+
+Examples: Auth0, Okta, Cognito, Clerk, or any OIDC/OAuth 2.1 provider that meets MCP + ChatGPT constraints.
+
+- Tasks Bridge: resource server + `token_verifier` only
+- IdP: login, tokens, authorization-server metadata
+- **Pros:** No custom auth server; battle-tested security; fits “don’t own identity”
+- **Cons:** Extra service/cost; must confirm ChatGPT + DCR + issuer URL compatibility
+- **Open work:** Pick one IdP, run a **short spike** with ChatGPT against Railway or ngrok
+
+### Option B — Built-in authorization server (fallback only)
+
+Co-locate `/authorize`, `/token`, `/register` on the Railway host via FastMCP `auth_server_provider`.
+
+- **Pros:** No third-party dependency
+- **Cons:** We own token storage, rotation, consent UI, DCR hardening, and incident response — **poor fit for a personal bridge**
+- **Status:** **Not recommended** unless Option A fails a verified ChatGPT handshake
+
+### Option C — Tunnel only (current default)
+
+No Railway OAuth work; Mac runs MCP + tunnel for ChatGPT.
+
+- **Pros:** Already works; zero auth-server scope
+- **Cons:** No always-on ChatGPT without local machine
+
+**Working assumption:** **Option C** remains the default for ChatGPT. **Option A** is the only OAuth path worth serious investigation. **Option B** is a last resort.
+
+## Target architecture if external IdP works (illustrative)
 
 ```
 https://tasks-bridge.up.railway.app
-├── /mcp                          ← MCP (requires OAuth access token)
-├── /.well-known/oauth-protected-resource/mcp
+├── /mcp                                    ← MCP (OAuth access token)
+└── /.well-known/oauth-protected-resource/mcp
+
+https://<your-idp>/
 ├── /.well-known/oauth-authorization-server
-├── /authorize                    ← browser consent (single operator)
-├── /token                        ← code + refresh exchange
-└── /register                     ← DCR for ChatGPT (enable)
+├── /authorize
+└── /token
 ```
 
-| Setting | Example value |
-|---|---|
-| `resource_server_url` | `https://tasks-bridge.up.railway.app/mcp` |
-| `issuer_url` | `https://tasks-bridge.up.railway.app` |
-| `required_scopes` | `["tasks:read", "tasks:write"]` or `["tasks"]` |
-| DCR | `ClientRegistrationOptions(enabled=True)` |
+Exact URLs and env vars depend on the IdP chosen — **not specified here**.
 
-Google Tasks OAuth (`GOOGLE_*`) stays **separate** — it authorizes the server to Google. MCP OAuth authorizes **ChatGPT (or other clients) to your MCP server**.
-
-## Minimal OAuth flow (ChatGPT user)
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant ChatGPT
-    participant MCP as Tasks Bridge /mcp
-    participant AS as /authorize /token
-    participant Google as Google Tasks API
-
-    ChatGPT->>MCP: POST /mcp (no token)
-    MCP-->>ChatGPT: 401 + WWW-Authenticate (optional)
-    ChatGPT->>MCP: GET /.well-known/oauth-protected-resource/mcp
-    MCP-->>ChatGPT: authorization_servers[]
-    ChatGPT->>AS: GET /.well-known/oauth-authorization-server
-    AS-->>ChatGPT: authorize + token endpoints, PKCE
-    ChatGPT->>AS: POST /register (DCR)
-    AS-->>ChatGPT: client_id
-    ChatGPT->>User: Open /authorize (PKCE)
-    User->>AS: Approve (single-user login)
-    AS-->>ChatGPT: redirect with code
-    ChatGPT->>AS: POST /token (code + PKCE verifier)
-    AS-->>ChatGPT: access_token (+ refresh_token)
-    ChatGPT->>MCP: POST /mcp Authorization Bearer access_token
-    MCP->>Google: Tasks API (server GOOGLE_* creds)
-    Google-->>MCP: task data
-    MCP-->>ChatGPT: tool results
-```
-
-## Implementation options
-
-### Option A — External IdP (Auth0, Okta, Cognito)
-
-- MCP server: `token_verifier` only (resource server mode)
-- IdP hosts authorization server metadata
-- **Pros:** Battle-tested login, MFA, audit
-- **Cons:** Extra service/cost; overkill for single-user personal bridge
-
-### Option B — Built-in minimal AS (recommended for this project)
-
-- Implement `OAuthAuthorizationServerProvider` with in-memory store (or SQLite)
-- Simple `/authorize` HTML page: “Allow ChatGPT to access your Tasks Bridge?” + optional shared PIN
-- Enable DCR for ChatGPT
-- Wire FastMCP `auth=` + `auth_server_provider=` in `mcp_server.py` when `MCP_AUTH_MODE=oauth`
-- **Pros:** No third party; fits single-user model; uses SDK routes
-- **Cons:** We own token storage, rotation, and hardening
-
-### Option C — Keep tunnel only (current)
-
-- No Railway OAuth work; Mac must run for ChatGPT
-- **Pros:** Already works
-- **Cons:** No always-on ChatGPT without local machine
-
-**Recommendation:** **Option B** for Railway + ChatGPT; keep **Option C** for daily dev.
-
-## Auth mode switch (proposed config)
+## Auth mode switch (code today)
 
 | `MCP_AUTH_MODE` | Use case | Behavior |
 |---|---|---|
 | `none` | Local dev (default) | No inbound auth on `/mcp` |
-| `static` | Railway hardening / scripts | `MCP_API_TOKEN` bearer via [auth/static_bearer.py](../auth/static_bearer.py) |
-| `oauth` | ChatGPT + Railway HTTPS | FastMCP OAuth via [auth/oauth.py](../auth/oauth.py); no static bearer wrapper |
+| `static` | Railway / scripts | Bearer via [auth/static_bearer.py](../auth/static_bearer.py) |
+| `oauth` | ChatGPT + Railway HTTPS (TBD) | Stub in [auth/oauth.py](../auth/oauth.py) — not implemented |
 
-Production Railway with ChatGPT should use `oauth`. Static bearer and OAuth should **not** both wrap `/mcp`.
+Static bearer and OAuth must **not** both wrap `/mcp`.
 
-## Proposed new env vars (Option B)
+## Suggested next steps (investigation, not implementation schedule)
 
-| Variable | Purpose |
+### Phase 0 — Decide whether to pursue OAuth at all
+
+- [ ] Confirm ChatGPT + tunnel remains acceptable for daily use
+- [ ] If yes for always-on Railway ChatGPT, proceed to Phase 1; otherwise stop here
+
+### Phase 1 — External IdP spike (small, time-boxed)
+
+- [ ] Select one standards-compliant IdP with OAuth 2.1 + PKCE
+- [ ] Confirm IdP metadata URLs, audience/resource indicators, and ChatGPT connector behavior
+- [ ] Spike FastMCP `token_verifier` + protected-resource metadata on HTTPS (ngrok or Railway)
+- [ ] One end-to-end ChatGPT handshake — document pass/fail; **no production code until pass**
+
+### Phase 2 — Implement only if Phase 1 passes
+
+- [ ] Wire `auth/oauth.py` to chosen IdP (resource server only)
+- [ ] Env vars, Railway checklist, tests for metadata + 401 shape
+- [ ] Revisit whether built-in AS (Option B) is still needed — default **no**
+
+## Conflicts / touchpoints with current code
+
+| Component | Role |
 |---|---|
-| `MCP_AUTH_MODE` | `none` \| `static` \| `oauth` |
-| `MCP_OAUTH_ISSUER_URL` | `https://<app>.up.railway.app` |
-| `MCP_OAUTH_RESOURCE_URL` | `https://<app>.up.railway.app/mcp` |
-| `MCP_OAUTH_SCOPES` | e.g. `tasks:read,tasks:write` |
-| `MCP_OAUTH_CONSENT_SECRET` | Optional PIN shown on authorize page (single-user gate) |
-| `MCP_OAUTH_TOKEN_TTL_SECONDS` | Access token lifetime (default 3600) |
-
-Keep existing `GOOGLE_*` for Google Tasks API access.
-
-## ChatGPT connector setup (after implementation)
-
-1. Deploy Tasks Bridge to Railway with `MCP_AUTH_MODE=oauth`
-2. In ChatGPT → **Settings → Connectors** → add MCP URL:  
-   `https://<app>.up.railway.app/mcp`
-3. Choose **OAuth** (not API key)
-4. Complete browser consent when prompted
-5. Test `get_bridge_diagnostics` / `get_task_lists`
-
-## Implementation phases
-
-### Phase 1 — Design + spike (1–2 days)
-
-- [ ] Confirm ChatGPT fetches `/.well-known/oauth-authorization-server` vs `/mcp`-suffixed variant on Railway
-- [ ] Spike FastMCP `auth=` on local HTTPS (mkcert) or ngrok
-- [ ] Verify DCR + PKCE handshake with ChatGPT once
-
-### Phase 2 — Minimal provider (3–5 days)
-
-- [ ] `mcp_oauth_provider.py` — in-memory codes/tokens/clients
-- [ ] Simple authorize HTML template (approve/deny)
-- [ ] Wire `mcp_server.py` auth modes; bypass `http_security` bearer when `oauth`
-- [ ] Tests: metadata routes, token exchange, 401 WWW-Authenticate shape
-
-### Phase 3 — Production hardening (2–3 days)
-
-- [ ] Persistent token store or short TTL + refresh only
-- [ ] Rate limits on `/authorize` and `/token`
-- [ ] Docs + Railway checklist update
-- [ ] Remove or demote `MCP_API_TOKEN` when `oauth` is default for production
-
-## Conflicts with current code
-
-| Component | Change needed |
-|---|---|
-| [auth/](../auth/) | `oauth.py` implements FastMCP OAuth; `static_bearer.py` handles bearer mode |
-| [http_security.py](../http_security.py) | Rate/size limits only — no inbound auth |
-| [mcp_server.py](../mcp_server.py) | `create_server(auth_provider=…)` wires auth modes |
-| [config.py](../config.py) | `MCP_AUTH_MODE` and OAuth URLs (future) |
-| [docs/railway.md](railway.md) | Link here; ChatGPT OAuth setup steps |
-| [PROJECT_STATUS.md](../PROJECT_STATUS.md) | Track phase completion |
+| [auth/oauth.py](../auth/oauth.py) | Future OAuth mode — IdP-backed resource server preferred |
+| [auth/static_bearer.py](../auth/static_bearer.py) | Today’s Railway inbound auth |
+| [http_security.py](../http_security.py) | Rate/size limits only |
+| [mcp_server.py](../mcp_server.py) | `create_server(auth_provider=…)` |
+| [docs/railway.md](railway.md) | Client access paths; link here |
 
 ## Security notes (single-user)
 
-- MCP OAuth protects **who can call your MCP server** (ChatGPT, random internet)
+- MCP OAuth protects **who can call your MCP server**
 - Google OAuth protects **which Google account’s Tasks** the server uses
-- Approve page should be boring and explicit: one operator, one bridge
-- Prefer **HTTPS only** on Railway (already true)
-- Enable DCR but validate redirect URIs per MCP SDK handler
-- Do not expose Google refresh tokens to ChatGPT — they never leave the server
+- Do not expose Google refresh tokens to ChatGPT
+- Prefer HTTPS on Railway (already true)
+- Avoid operating a custom authorization server unless there is no viable IdP path
 
 ## References
 
@@ -213,4 +175,4 @@ Keep existing `GOOGLE_*` for Google Tasks API access.
 - [OpenAI Apps SDK — Authenticate users](https://developers.openai.com/apps-sdk/build/auth)
 - [RFC 9728 — Protected Resource Metadata](https://www.rfc-editor.org/rfc/rfc9728)
 - [RFC 8414 — Authorization Server Metadata](https://www.rfc-editor.org/rfc/rfc8414)
-- FastMCP: `mcp.server.auth.routes`, `mcp.server.auth.settings.AuthSettings`
+- FastMCP: `mcp.server.auth.settings.AuthSettings`, `token_verifier`

@@ -1,14 +1,14 @@
 # Project Status
 
-* **Last updated:** July 27, 2026 (auth modes: none / static / oauth)
+* **Last updated:** July 27, 2026 (OAuth doc: exploratory, external IdP first)
 * **Server version:** `1.6.0` (`bridge_diagnostics.py`)
 * **License:** MIT
 * **Deployment modes:** `local` (default) | `production` (Railway via env)
-* **Inbound auth modes:** `none` (local) | `static` (Railway bearer) | `oauth` (planned)
+* **Inbound auth modes:** `none` (local) | `static` (Railway bearer) | `oauth` (exploratory stub)
 
 ## Summary
 
-Tasks Bridge exposes **Google Tasks** to AI tools (ChatGPT, Cursor) through an MCP server. One Python codebase runs locally (native `.venv`) or on Railway (Docker). Inbound MCP auth is selected via `MCP_AUTH_MODE`: **none** for local dev, **static** bearer for Railway scripts/clients, **oauth** planned for ChatGPT over HTTPS. **ChatGPT today** uses the OpenAI Secure MCP Tunnel to localhost.
+Tasks Bridge exposes **Google Tasks** to AI tools (ChatGPT, Cursor) through an MCP server. One Python codebase runs locally (native `.venv`) or on Railway (Docker). Inbound MCP auth is selected via `MCP_AUTH_MODE`: **none** for local dev, **static** bearer for Railway scripts/clients, **oauth** exploratory stub for a possible ChatGPT + HTTPS path (external IdP preferred — not a custom auth server). **ChatGPT today** uses the OpenAI Secure MCP Tunnel to localhost.
 
 ## Architecture
 
@@ -33,7 +33,7 @@ GitHub  →  Railway  →  https://<app>.up.railway.app/mcp  →  curl / Inspect
 | Mode | Entry | Google auth | Inbound MCP auth | ChatGPT path |
 |---|---|---|---|---|
 | Local | `python mcp_server.py` / `start_tasks_bridge.sh` | `credentials.json` + `token.json` | `none` (default) | `tunnel-client` → localhost |
-| Production | Docker / Railway | `GOOGLE_*` env vars | `static` bearer (default) | **Planned** — tunnel today; Railway HTTPS after [MCP OAuth](docs/mcp-oauth-design.md) |
+| Production | Docker / Railway | `GOOGLE_*` env vars | `static` bearer (default) | **Exploratory** — tunnel today; Railway HTTPS only if IdP spike succeeds |
 
 ## MCP tools (10)
 
@@ -64,15 +64,15 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 ## Known issues
 
 * **ChatGPT tool discovery lag** — new MCP tools may appear in Inspector before ChatGPT exposes them. Likely OpenAI registry propagation, not a stale server. See [docs/chatgpt-discovery.md](docs/chatgpt-discovery.md).
-* **`oauth_metadata` warnings** — expected until [MCP OAuth](docs/mcp-oauth-design.md) is implemented (tunnel path works today).
-* **`MCP_AUTH_MODE=oauth`** — fails fast with not-implemented message until Phase 2.
+* **`oauth_metadata` warnings** — expected until an OAuth path is chosen (tunnel works today).
+* **`MCP_AUTH_MODE=oauth`** — fails fast; direction is exploratory ([docs/mcp-oauth-design.md](docs/mcp-oauth-design.md)).
 * **`tools/list_changed` not enabled** — optional future enhancement.
 
 ## Roadmap
 
 * [ ] First public GitHub release + Railway deploy (`MCP_AUTH_MODE=static`)
-* [ ] **Direct Railway → ChatGPT** — implement `auth/oauth.py` per [docs/mcp-oauth-design.md](docs/mcp-oauth-design.md)
-* [ ] ChatGPT continues on OpenAI tunnel until MCP OAuth ships
+* [ ] **Direct Railway → ChatGPT** — exploratory; time-boxed external IdP spike before any code — [docs/mcp-oauth-design.md](docs/mcp-oauth-design.md)
+* [ ] ChatGPT continues on OpenAI tunnel unless IdP + ChatGPT handshake succeeds
 * [ ] Optional: `tools/list_changed` + stateful HTTP for faster ChatGPT discovery
 
 ## Key files
@@ -88,7 +88,7 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 | `Dockerfile` / `railway.toml` | Railway production deploy |
 | `docs/local-dev.md` | Local setup |
 | `docs/railway.md` | Railway deploy |
-| `docs/mcp-oauth-design.md` | MCP OAuth design for ChatGPT + HTTPS |
+| `docs/mcp-oauth-design.md` | OAuth exploration for ChatGPT + HTTPS (external IdP first) |
 | `docs/chatgpt-tunnel.md` | OpenAI tunnel setup |
 | `docs/chatgpt-discovery.md` | Debugging ChatGPT tool discovery |
 | `.github/workflows/ci.yml` | CI: unit tests + dependency audit + security scan |
@@ -103,8 +103,8 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 ## Recent result
 
-Inbound MCP authentication split into `auth/` with three modes. Bearer auth moved out of `http_security.py`; OAuth stub fails fast until implemented.
+OAuth doc reframed as exploratory: evaluate external IdP (resource server only) before any custom authorization server. Tunnel remains the practical ChatGPT path.
 
 ## Next action
 
-Restart MCP after pulling: `./start_tasks_bridge.sh --http`. Verify with `get_bridge_diagnostics` (`auth_mode` field).
+No restart needed (docs + error message only). Commit when ready.

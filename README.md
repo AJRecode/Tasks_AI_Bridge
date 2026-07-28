@@ -21,7 +21,7 @@ If you fork or deploy this project, you need **your own** [Google Cloud OAuth cl
 |---|---|---|
 | **ChatGPT + local tunnel** | **Works now** | ChatGPT via [OpenAI Secure MCP Tunnel](docs/chatgpt-tunnel.md) → `localhost:8000/mcp` |
 | **Railway + static bearer** (`MCP_AUTH_MODE=static`) | **Works now** | curl, scanners, MCP Inspector, compatible custom clients — **not** the ChatGPT connector UI |
-| **Railway + OAuth** (`MCP_AUTH_MODE=oauth`) | **Planned** | ChatGPT over public HTTPS — design: [mcp-oauth-design.md](docs/mcp-oauth-design.md) |
+| **Railway + OAuth** (`MCP_AUTH_MODE=oauth`) | **Uncertain / exploratory** | ChatGPT over public HTTPS — may use external IdP; see [mcp-oauth-design.md](docs/mcp-oauth-design.md) |
 
 Inbound auth uses exactly one mode at a time: `none` (local default), `static` (production default), or `oauth` (stub until implemented). See `auth/` and [docs/railway.md](docs/railway.md).
 
@@ -95,7 +95,7 @@ ChatGPT (today)  →  OpenAI tunnel  ←  tunnel-client  ←  localhost:8000/mcp
 | **Bind address** | `0.0.0.0:$PORT` |
 | **Google OAuth** | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` (no browser) |
 | **Inbound MCP auth** | `MCP_API_TOKEN` bearer on `/mcp` — works with curl, scanners, Inspector, compatible custom clients |
-| **ChatGPT access** | **Tunnel to localhost today** — direct Railway HTTPS is **planned** ([MCP OAuth design](docs/mcp-oauth-design.md)) |
+| **ChatGPT access** | **Tunnel to localhost today** — Railway HTTPS for ChatGPT is **exploratory** ([OAuth exploration](docs/mcp-oauth-design.md)) |
 | **Health check** | Railway hits `/health` (`railway.toml`) |
 
 ### What stays local-only
@@ -111,13 +111,13 @@ These are **not deployed** to Railway:
 
 ## Deploy (Railway)
 
-Bearer-protected HTTPS for curl, scanners, Inspector, and compatible MCP clients — **not** ChatGPT direct HTTPS until MCP OAuth is built.
+Bearer-protected HTTPS for curl, scanners, Inspector, and compatible MCP clients — **not** ChatGPT direct HTTPS until an OAuth path is proven practical.
 
 ```
 GitHub → Railway → https://your-app.up.railway.app/mcp  (Authorization: Bearer MCP_API_TOKEN)
 ```
 
-Set `MCP_API_TOKEN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REFRESH_TOKEN` in Railway. See [docs/railway.md](docs/railway.md). For the ChatGPT + Railway roadmap, see **[docs/mcp-oauth-design.md](docs/mcp-oauth-design.md)**.
+Set `MCP_API_TOKEN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REFRESH_TOKEN` in Railway. See [docs/railway.md](docs/railway.md). For ChatGPT + Railway possibilities (uncertain), see **[docs/mcp-oauth-design.md](docs/mcp-oauth-design.md)**.
 
 ## Project layout
 
