@@ -51,7 +51,8 @@ GOOGLE_REFRESH_TOKEN = os.environ.get("GOOGLE_REFRESH_TOKEN", "").strip()
 GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS_JSON", "").strip()
 GOOGLE_TOKEN_JSON = os.environ.get("GOOGLE_TOKEN_JSON", "").strip()
 
-# Inbound MCP authentication (required in production)
+# Inbound MCP authentication
+MCP_AUTH_MODE = os.environ.get("MCP_AUTH_MODE", "").strip()
 MCP_API_TOKEN = os.environ.get("MCP_API_TOKEN", "").strip()
 
 # HTTP hardening
@@ -91,6 +92,13 @@ def mcp_http_url(*, host: str | None = None, port: int | None = None) -> str:
     host = host or HOST
     port = port if port is not None else PORT
     return f"http://{host}:{port}{MCP_PATH}"
+
+
+def auth_mode() -> str:
+    """Return resolved inbound auth mode: ``none``, ``static``, or ``oauth``."""
+    from auth.factory import resolve_auth_mode
+
+    return resolve_auth_mode()
 
 
 def public_mcp_url() -> str | None:

@@ -2,15 +2,16 @@
 # Start Tasks Bridge MCP server (HTTP) and optional OpenAI tunnel-client for ChatGPT.
 #
 # Usage:
-#   ./start_tasks_bridge.sh              # HTTP server + tunnel-client (same terminal)
-#   ./start_tasks_bridge.sh --windows    # macOS: MCP + tunnel + Inspector in separate Terminal windows
+#   ./start_tasks_bridge.sh              # macOS: three compact Terminal windows (default)
+#   ./start_tasks_bridge.sh --windows    # same as default on macOS
+#   ./start_tasks_bridge.sh --foreground # MCP + tunnel in this terminal (any OS)
 #   ./start_tasks_bridge.sh --windows --no-inspector
 #   ./start_tasks_bridge.sh --stop       # stop MCP server (port 8000), tunnel-client, and Inspector
 #   ./start_tasks_bridge.sh --status     # check MCP server, tunnel, and Inspector (also --check)
 #   ./start_tasks_bridge.sh --http       # HTTP server only
 #   ./start_tasks_bridge.sh --tunnel     # tunnel-client only (HTTP must already be running)
 #
-# Setup: see docs/chatgpt-tunnel.md
+# Window size (macOS --windows): TASKS_BRIDGE_WINDOW_X/Y/WIDTH/HEIGHT/GAP in .env
 
 set -euo pipefail
 
@@ -30,18 +31,29 @@ TUNNEL_WINDOW_TITLE="Tasks Bridge — Tunnel"
 INSPECTOR_WINDOW_TITLE="Tasks Bridge — Inspector"
 INSPECTOR_URL="http://127.0.0.1:8000/mcp"
 
-MODE="all"
+INSPECTOR_URL="http://127.0.0.1:8000/mcp"
+
+MODE=""
 INCLUDE_INSPECTOR=1
 for arg in "$@"; do
   case "$arg" in
     --http) MODE="http" ;;
     --tunnel) MODE="tunnel" ;;
     --windows) MODE="windows" ;;
+    --foreground|--all) MODE="all" ;;
     --stop) MODE="stop" ;;
     --status|--check) MODE="status" ;;
     --no-inspector) INCLUDE_INSPECTOR=0 ;;
   esac
 done
+
+if [[ -z "$MODE" ]]; then
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    MODE="windows"
+  else
+    MODE="all"
+  fi
+fi
 
 if [[ "${TASKS_BRIDGE_INSPECTOR:-1}" == "0" ]]; then
   INCLUDE_INSPECTOR=0
@@ -53,6 +65,13 @@ if [[ -f "$PROJECT_DIR/.env" ]]; then
   source "$PROJECT_DIR/.env"
   set +a
 fi
+
+# Compact Terminal.app windows (macOS --windows). Override in .env if needed.
+TERMINAL_WIN_X="${TASKS_BRIDGE_WINDOW_X:-20}"
+TERMINAL_WIN_Y="${TASKS_BRIDGE_WINDOW_Y:-40}"
+TERMINAL_WIN_WIDTH="${TASKS_BRIDGE_WINDOW_WIDTH:-440}"
+TERMINAL_WIN_HEIGHT="${TASKS_BRIDGE_WINDOW_HEIGHT:-260}"
+TERMINAL_WIN_GAP="${TASKS_BRIDGE_WINDOW_GAP:-8}"
 
 TUNNEL_PROFILE="${TUNNEL_CLIENT_PROFILE:-tasks-bridge}"
 TMUX_SESSION="${TASKS_BRIDGE_TMUX_SESSION:-tasks-bridge}"  # legacy cleanup only
@@ -274,14 +293,14 @@ print_bridge_status() {
     fi
   else
     echo "Some services need attention:"
-    [[ "$mcp_ok" -eq 0 ]] && echo "  • MCP server: ./start_tasks_bridge.sh --http   (or --windows on macOS)"
+    [[ "$mcp_ok" -eq 0 ]] && echo "  • MCP server: ./start_tasks_bridge.sh   (macOS) or --http"
     [[ "$tunnel_state" == "STALE" || "$tunnel_state" == "DOWN" ]] && \
       [[ -n "${CONTROL_PLANE_API_KEY:-}" ]] && tunnel_client_available && \
       echo "  • Tunnel: ./start_tasks_bridge.sh --tunnel   (if MCP is already UP)"
     [[ "$inspector_state" == "STALE" || "$inspector_state" == "DOWN" ]] && \
-      echo "  • Inspector: included in ./start_tasks_bridge.sh --windows"
+      echo "  • Inspector: included when you run ./start_tasks_bridge.sh (macOS default)"
     if [[ "$mcp_ok" -eq 0 || "$tunnel_state" != "UP" && "$tunnel_state" != "N/A" ]]; then
-      echo "  • After sleep or multiple failures: ./start_tasks_bridge.sh --windows"
+      echo "  • After sleep or multiple failures: ./start_tasks_bridge.sh"
     fi
   fi
   echo
@@ -627,7 +646,7 @@ SCRIPT
 
 launch_mac_terminal_windows() {
   if [[ "$(uname -s)" != "Darwin" ]]; then
-    echo "--windows is macOS only (opens separate Terminal.app windows)."
+    echo "Separate Terminal windows are macOS only."
     echo "Use ./start_tasks_bridge.sh --http and --tunnel in separate terminals."
     echo "See docs/local-dev.md#platform-support"
     exit 1
@@ -637,6 +656,17 @@ launch_mac_terminal_windows() {
 
   local http_launcher_as tunnel_launcher_as inspector_launcher_as
   local http_title_as tunnel_title_as inspector_title_as window_ids
+  local win_x win_y win_w win_h win_gap
+  local mcp_bounds tunnel_bounds inspector_bounds
+  win_x="$TERMINAL_WIN_X"
+  win_y="$TERMINAL_WIN_Y"
+  win_w="$TERMINAL_WIN_WIDTH"
+  win_h="$TERMINAL_WIN_HEIGHT"
+  win_gap="$TERMINAL_WIN_GAP"
+  mcp_bounds="{${win_x}, ${win_y}, $((win_x + win_w)), $((win_y + win_h))}"
+  tunnel_bounds="{${win_x}, $((win_y + win_h + win_gap)), $((win_x + win_w)), $((win_y + 2 * win_h + win_gap))}"
+  inspector_bounds="{${win_x}, $((win_y + 2 * (win_h + win_gap))), $((win_x + win_w)), $((win_y + 3 * win_h + 2 * win_gap))}"
+
   http_launcher_as="$(printf '%s' "$HTTP_LAUNCHER" | sed 's/\\/\\\\/g; s/"/\\"/g')"
   tunnel_launcher_as="$(printf '%s' "$TUNNEL_LAUNCHER" | sed 's/\\/\\\\/g; s/"/\\"/g')"
   http_title_as="$(printf '%s' "$HTTP_WINDOW_TITLE" | sed 's/\\/\\\\/g; s/"/\\"/g')"
@@ -653,17 +683,20 @@ tell application "Terminal"
   set inspectorLauncher to "$inspector_launcher_as"
   set mcpTab to do script "bash " & quoted form of httpLauncher
   set custom title of mcpTab to "$http_title_as"
-  delay 0.3
+  delay 0.2
+  set bounds of front window to $mcp_bounds
   set httpWindowId to id of front window
-  delay 0.5
+  delay 0.4
   set tunnelTab to do script "bash " & quoted form of tunnelLauncher
   set custom title of tunnelTab to "$tunnel_title_as"
-  delay 0.3
+  delay 0.2
+  set bounds of front window to $tunnel_bounds
   set tunnelWindowId to id of front window
-  delay 0.5
+  delay 0.4
   set inspectorTab to do script "bash " & quoted form of inspectorLauncher
   set custom title of inspectorTab to "$inspector_title_as"
-  delay 0.3
+  delay 0.2
+  set bounds of front window to $inspector_bounds
   set inspectorWindowId to id of front window
   return (httpWindowId as text) & linefeed & (tunnelWindowId as text) & linefeed & (inspectorWindowId as text)
 end tell
@@ -681,12 +714,14 @@ tell application "Terminal"
   set tunnelLauncher to "$tunnel_launcher_as"
   set mcpTab to do script "bash " & quoted form of httpLauncher
   set custom title of mcpTab to "$http_title_as"
-  delay 0.3
+  delay 0.2
+  set bounds of front window to $mcp_bounds
   set httpWindowId to id of front window
-  delay 0.5
+  delay 0.4
   set tunnelTab to do script "bash " & quoted form of tunnelLauncher
   set custom title of tunnelTab to "$tunnel_title_as"
-  delay 0.3
+  delay 0.2
+  set bounds of front window to $tunnel_bounds
   set tunnelWindowId to id of front window
   return (httpWindowId as text) & linefeed & (tunnelWindowId as text)
 end tell
@@ -701,17 +736,18 @@ OSA
   printf '%s\n' "$window_ids" >"$TERMINAL_WINDOW_IDS_FILE"
 
   if [[ "$INCLUDE_INSPECTOR" -eq 1 ]]; then
-    echo "Opened three Terminal windows:"
+    echo "Opened three compact Terminal windows (${win_w}x${win_h}, stacked):"
     echo "  1. $HTTP_WINDOW_TITLE"
     echo "  2. $TUNNEL_WINDOW_TITLE"
     echo "  3. $INSPECTOR_WINDOW_TITLE"
   else
-    echo "Opened two Terminal windows:"
+    echo "Opened two compact Terminal windows (${win_w}x${win_h}, stacked):"
     echo "  1. $HTTP_WINDOW_TITLE"
     echo "  2. $TUNNEL_WINDOW_TITLE"
   fi
   echo
-  echo "Switch between them with Cmd+\` or the Window menu — no special key chords."
+  echo "Resize via .env: TASKS_BRIDGE_WINDOW_WIDTH, TASKS_BRIDGE_WINDOW_HEIGHT, TASKS_BRIDGE_WINDOW_X, TASKS_BRIDGE_WINDOW_Y, TASKS_BRIDGE_WINDOW_GAP"
+  echo "Switch windows with Cmd+\` or the Window menu — no special key chords."
   echo "Look for: mcp session initialized and tunnel-client started."
   if [[ "$INCLUDE_INSPECTOR" -eq 1 ]]; then
     echo "Inspector opens a browser tab (close old Inspector tabs if reconnecting)."

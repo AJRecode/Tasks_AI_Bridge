@@ -1,10 +1,9 @@
-"""Production HTTP security for the MCP streamable-http endpoint."""
+"""Production HTTP hardening for the MCP streamable-http endpoint."""
 
 from __future__ import annotations
 
 import json
 import logging
-import secrets
 import time
 from collections import defaultdict, deque
 from typing import TYPE_CHECKING, Any
@@ -18,55 +17,9 @@ if TYPE_CHECKING:
 
 LOGGER = logging.getLogger("tasks_bridge.security")
 
-UNAUTHORIZED_BODY = {"error": "Unauthorized"}
 RATE_LIMIT_BODY = {"error": "Too many requests"}
 PAYLOAD_TOO_LARGE_BODY = {"error": "Payload too large"}
 INTERNAL_ERROR_BODY = {"error": "Internal server error"}
-
-
-def auth_enabled() -> bool:
-    """Return True when inbound MCP requests must present a bearer token."""
-    return bool(config.MCP_API_TOKEN) or config.IS_PRODUCTION
-
-
-def validate_deployment_security() -> None:
-    """Fail fast on unsafe production or preview configuration."""
-    if config.IS_PRODUCTION and not config.MCP_API_TOKEN:
-        raise RuntimeError(
-            "Production requires MCP_API_TOKEN for inbound authentication on /mcp. "
-            "Generate a long random secret and set it in Railway variables."
-        )
-
-    if config.is_railway_preview() and not config.ALLOW_PREVIEW_SECRETS:
-        if config.has_google_oauth_secrets():
-            raise RuntimeError(
-                "Google OAuth secrets are present in a Railway preview environment. "
-                "Use sealed variables for production only, disable PR environments for "
-                "this service, or set ALLOW_PREVIEW_SECRETS=1 only for trusted previews."
-            )
-
-
-def _extract_bearer_token(scope: dict[str, Any]) -> str | None:
-    for key, value in scope.get("headers", []):
-        if key.decode("latin-1").lower() != "authorization":
-            continue
-        header = value.decode("latin-1").strip()
-        prefix = "Bearer "
-        if header.startswith(prefix):
-            return header[len(prefix) :].strip()
-        return None
-    return None
-
-
-def _authorized(scope: dict[str, Any]) -> bool:
-    if not auth_enabled():
-        return True
-
-    provided = _extract_bearer_token(scope)
-    expected = config.MCP_API_TOKEN
-    if not provided or not expected:
-        return False
-    return secrets.compare_digest(provided, expected)
 
 
 def _client_ip(scope: dict[str, Any]) -> str:
@@ -110,7 +63,7 @@ async def _send_json(send, *, status: int, body: dict[str, str]) -> None:
 
 
 class ProductionSecurityASGI:
-    """Auth, rate limits, and request-size limits for MCP HTTP traffic."""
+    """Rate limits, request-size limits, and error shielding for MCP HTTP traffic."""
 
     def __init__(self, app, *, mcp_path: str) -> None:
         self.app = app
@@ -128,11 +81,6 @@ class ProductionSecurityASGI:
         path = scope.get("path", "").rstrip("/") or "/"
         if path != self.mcp_path:
             await self._call_with_error_shield(scope, receive, send)
-            return
-
-        if not _authorized(scope):
-            LOGGER.warning("Rejected unauthenticated MCP request from %s", _client_ip(scope))
-            await _send_json(send, status=401, body=UNAUTHORIZED_BODY)
             return
 
         if not self._rate_limiter.allow(_client_ip(scope)):
@@ -197,7 +145,7 @@ class PayloadTooLargeError(Exception):
 
 
 def install_http_security(fastmcp: FastMCP, *, mcp_path: str) -> None:
-    """Wrap the streamable HTTP app with production security middleware."""
+    """Wrap the streamable HTTP app with rate/size limits and error shielding."""
     original_streamable_http_app = fastmcp.streamable_http_app
 
     def streamable_http_app_with_security():

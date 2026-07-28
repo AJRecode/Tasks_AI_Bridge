@@ -15,7 +15,7 @@ This document describes a **minimal OAuth 2.1 flow** so ChatGPT can connect to T
 Today:
 
 - **ChatGPT** → OpenAI tunnel → `localhost:8000/mcp` ([chatgpt-tunnel.md](chatgpt-tunnel.md))
-- **Railway** → bearer auth on `/mcp` ([http_security.py](../http_security.py)) — useful for scanners and generic clients, **not ChatGPT**
+- **Railway** → `MCP_AUTH_MODE=static` bearer on `/mcp` ([auth/static_bearer.py](../auth/static_bearer.py)) — useful for scanners and generic clients, **not ChatGPT**
 
 Goal: add MCP-standard OAuth so ChatGPT can use `https://<app>.up.railway.app/mcp` directly.
 
@@ -53,7 +53,7 @@ Our dependency `mcp>=1.28.1` / FastMCP supports:
 - `token_verifier` → validates bearer tokens on `/mcp`
 - Protected resource routes via `create_protected_resource_routes`
 
-We should **prefer FastMCP native auth** over extending `http_security.py` when OAuth mode is enabled.
+We should **prefer FastMCP native auth** via `auth/oauth.py` over extending `http_security.py` when OAuth mode is enabled.
 
 ## Recommended architecture (single-user bridge)
 
@@ -138,8 +138,8 @@ sequenceDiagram
 | `MCP_AUTH_MODE` | Use case | Behavior |
 |---|---|---|
 | `none` | Local dev (default) | No inbound auth on `/mcp` |
-| `static` | Railway hardening / scripts | Current `MCP_API_TOKEN` bearer ([http_security.py](../http_security.py)) |
-| `oauth` | ChatGPT + Railway HTTPS | FastMCP OAuth; disable static bearer wrapper |
+| `static` | Railway hardening / scripts | `MCP_API_TOKEN` bearer via [auth/static_bearer.py](../auth/static_bearer.py) |
+| `oauth` | ChatGPT + Railway HTTPS | FastMCP OAuth via [auth/oauth.py](../auth/oauth.py); no static bearer wrapper |
 
 Production Railway with ChatGPT should use `oauth`. Static bearer and OAuth should **not** both wrap `/mcp`.
 
@@ -191,9 +191,10 @@ Keep existing `GOOGLE_*` for Google Tasks API access.
 
 | Component | Change needed |
 |---|---|
-| [http_security.py](../http_security.py) | Skip `/mcp` bearer gate when `MCP_AUTH_MODE=oauth` |
-| [mcp_server.py](../mcp_server.py) | Pass `auth=` / `auth_server_provider=` to FastMCP |
-| [config.py](../config.py) | Add `MCP_AUTH_MODE` and OAuth URLs |
+| [auth/](../auth/) | `oauth.py` implements FastMCP OAuth; `static_bearer.py` handles bearer mode |
+| [http_security.py](../http_security.py) | Rate/size limits only — no inbound auth |
+| [mcp_server.py](../mcp_server.py) | `create_server(auth_provider=…)` wires auth modes |
+| [config.py](../config.py) | `MCP_AUTH_MODE` and OAuth URLs (future) |
 | [docs/railway.md](railway.md) | Link here; ChatGPT OAuth setup steps |
 | [PROJECT_STATUS.md](../PROJECT_STATUS.md) | Track phase completion |
 

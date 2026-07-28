@@ -15,7 +15,15 @@ If you fork or deploy this project, you need **your own** [Google Cloud OAuth cl
 - **Production** — deploy to [Railway](docs/railway.md) with bearer-protected public HTTPS (`MCP_API_TOKEN`)
 - **Diagnostics** — `get_bridge_diagnostics` for schema/version verification
 
-> **ChatGPT today:** use the [OpenAI Secure MCP Tunnel](docs/chatgpt-tunnel.md) to localhost — the ChatGPT connector UI does not support static bearer tokens. **Direct Railway → ChatGPT** is **planned** pending [MCP endpoint OAuth](docs/mcp-oauth-design.md). Bearer-protected Railway deployments work now with **curl**, security **scanners**, **MCP Inspector**, and other clients that send `Authorization: Bearer …`.
+### Client access paths
+
+| Path | Status | Works with |
+|---|---|---|
+| **ChatGPT + local tunnel** | **Works now** | ChatGPT via [OpenAI Secure MCP Tunnel](docs/chatgpt-tunnel.md) → `localhost:8000/mcp` |
+| **Railway + static bearer** (`MCP_AUTH_MODE=static`) | **Works now** | curl, scanners, MCP Inspector, compatible custom clients — **not** the ChatGPT connector UI |
+| **Railway + OAuth** (`MCP_AUTH_MODE=oauth`) | **Planned** | ChatGPT over public HTTPS — design: [mcp-oauth-design.md](docs/mcp-oauth-design.md) |
+
+Inbound auth uses exactly one mode at a time: `none` (local default), `static` (production default), or `oauth` (stub until implemented). See `auth/` and [docs/railway.md](docs/railway.md).
 
 ## Quick start (local)
 
@@ -55,19 +63,20 @@ ChatGPT       →  OpenAI tunnel ← tunnel-client ← http://127.0.0.1:8000/mcp
 | **Bind address** | `127.0.0.1:8000` |
 | **Google OAuth** | `credentials.json` + browser flow → `token.json` on disk |
 | **ChatGPT access** | `tunnel-client` exposes localhost (ChatGPT can't reach `127.0.0.1`) |
-| **Orchestration** | macOS: `--windows` (3 Terminal windows). Elsewhere: `--http` + `--tunnel` in separate tabs |
+| **Orchestration** | macOS: `./start_tasks_bridge.sh` (3 compact Terminal windows). Elsewhere: `--http` + `--tunnel` |
 
 Daily commands:
 
 ```bash
 ./start_tasks_bridge.sh --status    # what's running
-./start_tasks_bridge.sh --windows   # macOS: 3 named Terminal.app windows
+./start_tasks_bridge.sh             # macOS: 3 compact Terminal windows (default)
+./start_tasks_bridge.sh --foreground # MCP + tunnel in this terminal
 ./start_tasks_bridge.sh --http      # MCP only (Cursor / any OS — use separate tabs)
 ./start_tasks_bridge.sh --tunnel    # tunnel only (second tab, after MCP is up)
 ./start_tasks_bridge.sh --stop
 ```
 
-**Platform note:** **`--windows`** opens three separate Terminal.app windows on macOS (no tmux, no key chords). In **Cursor** or on **Linux**, use **`--http`** and **`--tunnel`** in separate terminal tabs. See [docs/local-dev.md](docs/local-dev.md).
+**Platform note:** On **macOS**, the default opens three compact Terminal windows (MCP, tunnel, Inspector). In **Cursor** or on **Linux**, use **`--http`** and **`--tunnel`** in separate terminal tabs. See [docs/local-dev.md](docs/local-dev.md).
 
 ### Railway (production)
 
@@ -114,7 +123,8 @@ Set `MCP_API_TOKEN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REF
 
 | File | Purpose |
 |---|---|
-| `mcp_server.py` | FastMCP HTTP/stdio entry point |
+| `mcp_server.py` | FastMCP HTTP/stdio entry point; `create_server(auth_provider)` |
+| `auth/` | Inbound MCP auth modes (`none`, `static`, `oauth` stub) |
 | `task_services.py` | Business logic and list-name resolution |
 | `google_tasks.py` | Google Tasks API adapter |
 | `google_auth.py` | OAuth (local files or env vars) |

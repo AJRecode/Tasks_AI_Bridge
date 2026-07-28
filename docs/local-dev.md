@@ -21,8 +21,10 @@ The **MCP server** (`mcp_server.py`), Python tests, and Cursor integration are *
 | `python mcp_server.py` | Any | MCP server only |
 | `./start_tasks_bridge.sh --http` | Any* | MCP server in current terminal |
 | `./start_tasks_bridge.sh --tunnel` | Any* | Tunnel only (MCP must already be running) |
-| `./start_tasks_bridge.sh` (default) | Any* | MCP foreground + tunnel background in one terminal |
-| `./start_tasks_bridge.sh --windows` | **macOS only** | Three **separate Terminal.app windows** (MCP, tunnel, Inspector) |
+| `./start_tasks_bridge.sh` (default) | **macOS** | Three compact Terminal windows (MCP, tunnel, Inspector) |
+| `./start_tasks_bridge.sh` (default) | Linux / other | MCP foreground + tunnel in one terminal |
+| `./start_tasks_bridge.sh --foreground` | Any* | MCP + tunnel in this terminal (old macOS default) |
+| `./start_tasks_bridge.sh --windows` | **macOS only** | Same as default — three compact Terminal windows |
 | `./start_tasks_bridge.sh --stop` | Any* | Kill processes; close Terminal windows opened by `--windows` |
 
 \* Requires bash, Python 3.11+, and `lsof` (common on macOS/Linux).
@@ -33,10 +35,20 @@ Automating Terminal.app tabs via AppleScript proved **unreliable** (hangs, syste
 
 ### macOS `--windows` (Terminal.app)
 
-Opens three ordinary Terminal windows with clear titles — switch with **Cmd+`** or the **Window** menu:
+Opens three compact Terminal windows (default **440×260**, stacked vertically) with clear titles — switch with **Cmd+`** or the **Window** menu:
 
 ```bash
-./start_tasks_bridge.sh --windows
+./start_tasks_bridge.sh
+```
+
+Resize defaults in `.env`:
+
+```bash
+TASKS_BRIDGE_WINDOW_WIDTH=440
+TASKS_BRIDGE_WINDOW_HEIGHT=260
+TASKS_BRIDGE_WINDOW_X=20
+TASKS_BRIDGE_WINDOW_Y=40
+TASKS_BRIDGE_WINDOW_GAP=8
 ```
 
 | Window title | Service |

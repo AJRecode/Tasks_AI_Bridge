@@ -1,12 +1,16 @@
 # Railway deployment
 
-Deploy Tasks Bridge as a **bearer-protected** public HTTPS MCP endpoint (`MCP_API_TOKEN` on `/mcp`).
+Deploy Tasks Bridge as a **bearer-protected** public HTTPS MCP endpoint when `MCP_AUTH_MODE=static` (production default).
 
-**Works today:** curl, security scanners, MCP Inspector (with bearer header), and any compatible custom MCP client that sends `Authorization: Bearer …`.
+## Client access paths
 
-**ChatGPT today:** use the [OpenAI Secure MCP Tunnel](chatgpt-tunnel.md) to localhost — not Railway HTTPS. The ChatGPT connector UI supports OAuth, not static bearer tokens.
+| Path | Status | Notes |
+|---|---|---|
+| **ChatGPT + local tunnel** | **Works now** | [chatgpt-tunnel.md](chatgpt-tunnel.md) → `localhost:8000/mcp`. ChatGPT does not use Railway HTTPS today. |
+| **Railway + static bearer** | **Works now** | `MCP_AUTH_MODE=static` + `MCP_API_TOKEN`. curl, scanners, MCP Inspector (bearer header), compatible custom clients. **Not** the ChatGPT connector UI. |
+| **Railway + OAuth** | **Planned** | `MCP_AUTH_MODE=oauth` — ChatGPT over public HTTPS. Design: **[mcp-oauth-design.md](mcp-oauth-design.md)** (not implemented yet). |
 
-> **Planned:** direct **Railway → ChatGPT** over HTTPS requires **MCP endpoint OAuth**. Design and phases: **[mcp-oauth-design.md](mcp-oauth-design.md)**.
+Exactly one inbound auth mode is active per process (`none`, `static`, or `oauth`). Static bearer and OAuth do not run together.
 
 ```
 GitHub  →  push  →  Railway  →  https://<app>.up.railway.app/mcp  →  curl / Inspector / custom clients
@@ -49,7 +53,8 @@ Set in the Railway dashboard (Settings → Variables):
 
 | Variable | Required | Notes |
 |---|---|---|
-| `MCP_API_TOKEN` | **Yes** | Long random secret for `Authorization: Bearer …` on `/mcp` |
+| `MCP_AUTH_MODE` | Optional | `none` (local default) \| `static` (production default) \| `oauth` (planned). See [mcp-oauth-design.md](mcp-oauth-design.md) |
+| `MCP_API_TOKEN` | **Yes** (when `static`) | Long random secret for `Authorization: Bearer …` on `/mcp` |
 | `GOOGLE_CLIENT_ID` | Yes | From OAuth client |
 | `GOOGLE_CLIENT_SECRET` | Yes | From OAuth client |
 | `GOOGLE_REFRESH_TOKEN` | Yes | From local `token.json` |
