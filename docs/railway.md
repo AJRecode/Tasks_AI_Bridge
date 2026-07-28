@@ -70,14 +70,43 @@ This repo includes a `Dockerfile` and `railway.toml`.
 3. Health check: `GET /health` → `{"status":"ok",...}` (no auth required).
 4. MCP endpoint: `https://<your-domain>/mcp` (requires bearer token).
 
-## 4. Connect ChatGPT
+## 4. Connect clients
 
-1. In ChatGPT connector settings, add your Railway MCP URL: `https://<app>.up.railway.app/mcp`.
-2. Configure the same bearer token you set as `MCP_API_TOKEN` in the connector auth settings.
-3. Use **Refresh** after deploying a new server version.
-4. Call `get_bridge_diagnostics` to verify `schema_hash` and `tool_names` match the deployment.
+### ChatGPT (today: use the tunnel, not Railway HTTPS)
 
-See [chatgpt-discovery.md](chatgpt-discovery.md) for debugging discovery lag.
+The ChatGPT connector UI supports **OAuth**, not static bearer tokens. **`MCP_API_TOKEN` cannot be entered in ChatGPT today.**
+
+For ChatGPT, keep using the **OpenAI Secure MCP Tunnel** to localhost (see [chatgpt-tunnel.md](chatgpt-tunnel.md)):
+
+```
+ChatGPT  →  OpenAI tunnel  ←  tunnel-client  ←  http://127.0.0.1:8000/mcp
+```
+
+Your Mac runs MCP + tunnel; ChatGPT never hits the public Railway URL directly. Railway is optional for ChatGPT until MCP endpoint OAuth is implemented — see [mcp-oauth-design.md](mcp-oauth-design.md).
+
+### Other MCP clients (Railway HTTPS + bearer)
+
+For clients that can send `Authorization: Bearer …` headers, use:
+
+```text
+https://<app>.up.railway.app/mcp
+```
+
+with the same value as Railway `MCP_API_TOKEN`.
+
+Verify with:
+
+```bash
+curl -i https://YOUR-APP.up.railway.app/mcp
+# expect 401 without token
+
+curl -i -X POST https://YOUR-APP.up.railway.app/mcp \
+  -H "Authorization: Bearer YOUR_MCP_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+```
+
+See [chatgpt-discovery.md](chatgpt-discovery.md) for debugging ChatGPT tool discovery when using the tunnel.
 
 ## Preview / PR environments
 
@@ -95,7 +124,7 @@ The server fails fast on preview boot when Google secrets are present unless `AL
 |---|---|---|
 | Bind address | `127.0.0.1:8000` | `0.0.0.0:$PORT` |
 | Google auth | `credentials.json` + browser | `GOOGLE_*` env vars |
-| ChatGPT path | `tunnel-client` → localhost | Public HTTPS URL |
+| ChatGPT path | `tunnel-client` → localhost (OpenAI tunnel auth) | Not direct HTTPS until MCP OAuth exists |
 | Start script | `start_tasks_bridge.sh` | Docker `CMD` |
 | Inspector | Optional dev tool | Not used |
 
@@ -106,6 +135,7 @@ Both modes share the same Python modules (`mcp_server.py`, `task_services.py`, e
 - [ ] `.env`, `token.json`, `credentials.json` are gitignored and not in git history
 - [ ] Rotate any secrets that were ever pasted into chat or committed by mistake
 - [ ] Railway variables hold Google OAuth secrets (not in repo)
-- [ ] `MCP_API_TOKEN` is set in Railway and configured in ChatGPT connector auth
+- [ ] `MCP_API_TOKEN` is set in Railway (blocks anonymous `/mcp` access)
+- [ ] ChatGPT uses the **tunnel** path unless/until MCP OAuth is implemented
 - [ ] Google OAuth secrets are sealed or excluded from PR preview environments
 - [ ] OAuth client belongs to **your** Google Cloud project — see [google-oauth.md](google-oauth.md)

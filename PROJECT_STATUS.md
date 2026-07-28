@@ -59,14 +59,14 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 ## Known issues
 
 * **ChatGPT tool discovery lag** — new MCP tools may appear in Inspector before ChatGPT exposes them. Likely OpenAI registry propagation, not a stale server. See [docs/chatgpt-discovery.md](docs/chatgpt-discovery.md).
-* **`oauth_metadata` warnings** — expected for this read-only server (no OAuth on the MCP endpoint).
+* **`oauth_metadata` warnings** — expected until [MCP OAuth](docs/mcp-oauth-design.md) is implemented (tunnel path works today).
 * **`tools/list_changed` not enabled** — optional future enhancement.
 
 ## Roadmap
 
 * [ ] First public GitHub release + Railway deploy
-* [ ] Verify ChatGPT against production HTTPS URL
-* [ ] Optional: OAuth web callback for multi-user deployments
+* [ ] Verify ChatGPT against production HTTPS URL (blocked until MCP OAuth — use tunnel for ChatGPT today)
+* [ ] **MCP endpoint OAuth** for ChatGPT + Railway HTTPS — design: [docs/mcp-oauth-design.md](docs/mcp-oauth-design.md)
 * [ ] Optional: `tools/list_changed` + stateful HTTP for faster ChatGPT discovery
 
 ## Key files
@@ -81,6 +81,7 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 | `Dockerfile` / `railway.toml` | Railway production deploy |
 | `docs/local-dev.md` | Local setup |
 | `docs/railway.md` | Railway deploy |
+| `docs/mcp-oauth-design.md` | MCP OAuth design for ChatGPT + HTTPS |
 | `docs/chatgpt-tunnel.md` | OpenAI tunnel setup |
 | `docs/chatgpt-discovery.md` | Debugging ChatGPT tool discovery |
 | `.github/workflows/ci.yml` | CI: unit tests + dependency audit + security scan |
