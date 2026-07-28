@@ -65,6 +65,18 @@ def test_invalid_auth_mode_raises(monkeypatch):
         resolve_auth_mode()
 
 
+def test_static_requires_mcp_api_token(monkeypatch):
+    _reload_config(
+        monkeypatch,
+        TASKS_BRIDGE_DEPLOYMENT="local",
+        MCP_AUTH_MODE="static",
+        MCP_API_TOKEN=None,
+    )
+    provider = StaticBearerAuthProvider()
+    with pytest.raises(RuntimeError, match="MCP_AUTH_MODE=static requires MCP_API_TOKEN"):
+        provider.validate_deployment()
+
+
 def test_static_production_requires_mcp_api_token(monkeypatch):
     _reload_config(
         monkeypatch,
@@ -73,7 +85,7 @@ def test_static_production_requires_mcp_api_token(monkeypatch):
         MCP_API_TOKEN=None,
     )
     provider = StaticBearerAuthProvider()
-    with pytest.raises(RuntimeError, match="MCP_API_TOKEN"):
+    with pytest.raises(RuntimeError, match="MCP_AUTH_MODE=static requires MCP_API_TOKEN"):
         provider.validate_deployment()
 
 
@@ -101,7 +113,7 @@ def test_production_default_cannot_boot_without_token(monkeypatch):
     )
     provider = create_auth_provider()
     assert provider.mode == "static"
-    with pytest.raises(RuntimeError, match="MCP_API_TOKEN"):
+    with pytest.raises(RuntimeError, match="MCP_AUTH_MODE=static requires MCP_API_TOKEN"):
         validate_deployment(provider)
 
 

@@ -1,6 +1,6 @@
 # Railway deployment
 
-Deploy Tasks Bridge as a **bearer-protected** public HTTPS MCP endpoint when `MCP_AUTH_MODE=static` (production default).
+Deploy Tasks Bridge as a **bearer-protected** public HTTPS MCP endpoint when `MCP_AUTH_MODE=static` (production default). **`MCP_AUTH_MODE=static` requires `MCP_API_TOKEN`** — locally and on Railway.
 
 ## Client access paths
 
@@ -13,11 +13,14 @@ Deploy Tasks Bridge as a **bearer-protected** public HTTPS MCP endpoint when `MC
 Exactly one inbound auth mode is active per process (`none`, `static`, or `oauth`). Static bearer and OAuth do not run together.
 
 ```
-GitHub  →  push  →  Railway  →  https://<app>.up.railway.app/mcp  →  curl / Inspector / custom clients
-                                              ↓
-                                    Google Tasks API
+ChatGPT (works now)     →  OpenAI tunnel  ←  tunnel-client  ←  localhost:8000/mcp
+                                                                    (local Mac)
 
-ChatGPT (today)  →  OpenAI tunnel  ←  tunnel-client  ←  localhost:8000/mcp
+GitHub  →  Railway  →  https://<app>.up.railway.app/mcp
+                              ↓
+              MCP_AUTH_MODE=static + MCP_API_TOKEN  →  curl / Inspector / custom clients
+                              ↓
+              GOOGLE_* env vars  →  Google Tasks API
 ```
 
 Public or private GitHub repos both work — Railway connects via GitHub the same way.
@@ -53,14 +56,14 @@ Set in the Railway dashboard (Settings → Variables):
 
 | Variable | Required | Notes |
 |---|---|---|
-| `MCP_AUTH_MODE` | Optional | `none` (local default) \| `static` (production default) \| `oauth` (planned). See [mcp-oauth-design.md](mcp-oauth-design.md) |
-| `MCP_API_TOKEN` | **Yes** (when `static`) | Long random secret for `Authorization: Bearer …` on `/mcp` |
+| `MCP_AUTH_MODE` | Optional | `none` (local default) \| `static` (production default) \| `oauth` (exploratory). See [mcp-oauth-design.md](mcp-oauth-design.md) |
+| `MCP_API_TOKEN` | **Yes when `static`** | Required whenever `MCP_AUTH_MODE=static` (local or Railway). `Authorization: Bearer …` on `/mcp` |
 | `GOOGLE_CLIENT_ID` | Yes | From OAuth client |
 | `GOOGLE_CLIENT_SECRET` | Yes | From OAuth client |
 | `GOOGLE_REFRESH_TOKEN` | Yes | From local `token.json` |
 | `TASKS_BRIDGE_DEPLOYMENT` | Optional | Auto-detected from `RAILWAY_*`; set to `production` to force |
 | `MCP_PUBLIC_HOST` | Optional | Auto-set from `RAILWAY_PUBLIC_DOMAIN` on Railway |
-| `MCP_RATE_LIMIT_REQUESTS` | Optional | Default `60` requests/window/IP on `/mcp` |
+| `MCP_RATE_LIMIT_REQUESTS` | Optional | Default `60` requests/window/IP on `/mcp` — **per process**, proxy-sensitive (see below) |
 | `MCP_MAX_REQUEST_BYTES` | Optional | Default `1048576` (1 MiB) |
 | `TASKS_BRIDGE_PRODUCTION_ENV` | Optional | Default `production`; used to detect trusted Railway env |
 
@@ -74,6 +77,10 @@ Generate a strong MCP token locally:
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
+### Rate limits (per-process, proxy-sensitive)
+
+`/mcp` rate limits are enforced **in memory per server process**, keyed by the client IP on the ASGI connection. On Railway, traffic often arrives through a **shared proxy IP**, so many distinct clients can count against the same bucket. Tune `MCP_RATE_LIMIT_REQUESTS` / `MCP_RATE_LIMIT_WINDOW_SECONDS` accordingly, or treat limits as a best-effort guard rather than per-user quotas.
+
 ## 3. Deploy
 
 This repo includes a `Dockerfile` and `railway.toml`.
@@ -81,13 +88,13 @@ This repo includes a `Dockerfile` and `railway.toml`.
 1. Create a new Railway project from your GitHub repo.
 2. Railway builds the Docker image and runs `python mcp_server.py`.
 3. Health check: `GET /health` → `{"status":"ok",...}` (no auth required).
-4. MCP endpoint: `https://<your-domain>/mcp` (requires bearer token).
+4. MCP endpoint: `https://<your-domain>/mcp` (requires bearer token when `static`).
 
 ## 4. Connect clients
 
-### ChatGPT — tunnel today; Railway HTTPS planned
+### ChatGPT — tunnel today (client access table row 1)
 
-**Status:** direct Railway → ChatGPT is **exploratory** — see [MCP OAuth exploration](mcp-oauth-design.md). Prefer external IdP over building an authorization server. Do not expect ChatGPT to connect to the public Railway URL until a path is proven.
+**Status:** direct Railway → ChatGPT is **exploratory** — see [MCP OAuth exploration](mcp-oauth-design.md). Do not expect ChatGPT to connect to the public Railway URL until a path is proven.
 
 The ChatGPT connector UI supports **OAuth**, not static bearer tokens. **`MCP_API_TOKEN` cannot be entered in ChatGPT today.**
 
@@ -97,16 +104,18 @@ For ChatGPT, keep using the **OpenAI Secure MCP Tunnel** to localhost (see [chat
 ChatGPT  →  OpenAI tunnel  ←  tunnel-client  ←  http://127.0.0.1:8000/mcp
 ```
 
-Your Mac runs MCP + tunnel; ChatGPT never hits the public Railway URL directly. Railway deploy is optional for ChatGPT until OAuth is proven practical — exploration doc: **[mcp-oauth-design.md](mcp-oauth-design.md)**.
+Your Mac runs MCP + tunnel; ChatGPT never hits the public Railway URL directly.
 
-### Bearer clients — Railway HTTPS works today
+### Bearer clients — Railway HTTPS (client access table row 2)
 
 Bearer-protected Railway `/mcp` works now with:
 
 - **curl** — smoke tests and JSON-RPC probes
-- **Security scanners** — verify 401 without token, rate limits, etc.
-- **MCP Inspector** — point at the public URL and set the bearer header (dev/debug)
-- **Compatible custom MCP clients** — any client that can send `Authorization: Bearer …`
+- **Security scanners** — verify 401 + `WWW-Authenticate` without token, rate limits, etc.
+- **MCP Inspector** — point at the public URL and add a **Custom Header** (not OAuth 2.0):
+  - **Header name:** `Authorization`
+  - **Header value:** `Bearer <MCP_API_TOKEN>`
+- **Compatible custom MCP clients** — any client that can send `Authorization: Bearer …` (scheme is case-insensitive)
 
 For those clients, use:
 
@@ -120,11 +129,12 @@ Verify with:
 
 ```bash
 curl -i https://YOUR-APP.up.railway.app/mcp
-# expect 401 without token
+# expect 401 without token and: WWW-Authenticate: Bearer realm="Tasks Bridge MCP"
 
 curl -i -X POST https://YOUR-APP.up.railway.app/mcp \
   -H "Authorization: Bearer YOUR_MCP_API_TOKEN" \
   -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
 ```
 
@@ -142,23 +152,23 @@ The server fails fast on preview boot when Google secrets are present unless `AL
 
 ## Local vs production
 
-| Concern | Local | Railway |
+| Concern | Local (default) | Railway (`static`) |
 |---|---|---|
 | Bind address | `127.0.0.1:8000` | `0.0.0.0:$PORT` |
 | Google auth | `credentials.json` + browser | `GOOGLE_*` env vars |
-| ChatGPT path | `tunnel-client` → localhost (OpenAI tunnel auth) | **Exploratory** — direct HTTPS only if external IdP + ChatGPT spike succeeds |
-| Bearer clients | Optional locally | curl, scanners, Inspector, custom clients on public HTTPS |
-| Start script | `start_tasks_bridge.sh` | Docker `CMD` |
-| Inspector | Optional dev tool | Not used |
+| Inbound MCP auth | `none` — no bearer | `static` + `MCP_API_TOKEN` required |
+| ChatGPT | **Tunnel** → localhost | **Not Railway HTTPS** — use tunnel on your Mac |
+| Bearer clients | Only if you set `MCP_AUTH_MODE=static` + token | curl, scanners, Inspector, custom clients |
+| Rate limits | Per-process if enabled | Per-process, proxy-sensitive |
 
-Both modes share the same Python modules (`mcp_server.py`, `task_services.py`, etc.). Deployment mode is selected via environment variables (`config.py`).
+Both modes share the same Python modules (`mcp_server.py`, `bridge/`, `services/`). Deployment mode is selected via environment variables (`bridge/config`).
 
 ## Security checklist
 
 - [ ] `.env`, `token.json`, `credentials.json` are gitignored and not in git history
 - [ ] Rotate any secrets that were ever pasted into chat or committed by mistake
 - [ ] Railway variables hold Google OAuth secrets (not in repo)
-- [ ] `MCP_API_TOKEN` is set in Railway (blocks anonymous `/mcp` access)
-- [ ] ChatGPT uses the **tunnel** path unless/until an external-IdP OAuth spike succeeds
+- [ ] `MCP_API_TOKEN` is set whenever `MCP_AUTH_MODE=static`
+- [ ] ChatGPT uses the **tunnel** path (client access table row 1)
 - [ ] Google OAuth secrets are sealed or excluded from PR preview environments
 - [ ] OAuth client belongs to **your** Google Cloud project — see [google-oauth.md](google-oauth.md)

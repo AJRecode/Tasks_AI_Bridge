@@ -1,7 +1,7 @@
 # Project Status
 
-* **Last updated:** July 27, 2026 (package layout: bridge/ + services/tasks/)
-* **Server version:** `1.6.0` (`bridge/diagnostics/`)
+* **Last updated:** July 27, 2026 21:20 ET (v1.6.1 docs + startup `.env` loading)
+* **Server version:** `1.6.1` (`bridge/diagnostics/`)
 * **License:** MIT
 * **Deployment modes:** `local` (default) | `production` (Railway via env)
 * **Inbound auth modes:** `none` (local) | `static` (Railway bearer) | `oauth` (exploratory stub)
@@ -48,14 +48,15 @@ GitHub  →  Railway  →  https://<app>.up.railway.app/mcp  →  curl / Inspect
 |---|---|
 | Config local/production | `python test_config.py` or `pytest test_config.py` |
 | Auth mode resolution | `pytest test_auth.py` |
+| Static bearer ASGI | `pytest test_static_bearer.py` |
 | Diagnostics | `python test_bridge_diagnostics.py` or `pytest test_bridge_diagnostics.py` |
 | Google Tasks API (local) | `python test_task_services.py "General"` (requires OAuth files) |
 | MCP HTTP + `/health` | `curl http://127.0.0.1:8000/health` |
 | Local orchestration | `./start_tasks_bridge.sh --status` (tunnel idle = UP, not STALE) |
 | Railway artifacts | `Dockerfile`, `railway.toml`, `/health` route |
 | GitHub CI | `.github/workflows/ci.yml` — pytest, pip-audit, bandit on push/PR |
-| Inbound auth | `bridge/auth/` — `none` / `static` / `oauth` (stub) |
-| HTTP hardening | `bridge/transport/` — rate/size limits, error shield |
+| Inbound auth | `bridge/auth/` — `static` requires `MCP_API_TOKEN` (local + prod); 401 + `WWW-Authenticate` |
+| HTTP hardening | `bridge/transport/` — per-process rate limits (proxy-sensitive), size limits |
 | Dependabot | `.github/dependabot.yml` — weekly pip, Docker, Actions updates |
 
 ## Runtime status
@@ -68,6 +69,7 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 * **`oauth_metadata` warnings** — expected until an OAuth path is chosen (tunnel works today).
 * **`MCP_AUTH_MODE=oauth`** — fails fast; direction is exploratory ([docs/mcp-oauth-design.md](docs/mcp-oauth-design.md)).
 * **`tools/list_changed` not enabled** — optional future enhancement.
+* **ChatGPT tunnel + `MCP_AUTH_MODE=static`** — incompatible; tunnel does not send bearer. Use `none` locally for ChatGPT; use `static` only to test Railway-style auth (Inspector, curl).
 
 ## Roadmap
 
@@ -106,8 +108,8 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 ## Recent result
 
-Reorganized into **bridge host** (`bridge/`) + **services** (`services/tasks/`). Root shims (`config.py`, `task_services.py`, etc.) remain for compatibility. All 20 unit tests pass.
+v1.6.1 shipped: static bearer requires `MCP_API_TOKEN` (local + Railway); case-insensitive `Bearer`; 401 + `WWW-Authenticate`; `test_static_bearer.py`; macOS MCP Server window sources `.env`; `--status` sends bearer when static; docs cover Inspector Custom Headers and tunnel vs static auth.
 
 ## Next action
 
-Restart MCP after pull: `./start_tasks_bridge.sh`
+First Railway deploy with `MCP_AUTH_MODE=static` + `MCP_API_TOKEN`, or revert local `.env` to `none` for ChatGPT tunnel daily use.

@@ -142,6 +142,15 @@ inspector_pids() {
 }
 
 mcp_responds() {
+  if [[ -n "${MCP_API_TOKEN:-}" && "${MCP_AUTH_MODE:-}" == "static" ]]; then
+    curl -sf --max-time 3 -X POST "$MCP_URL" \
+      -H "Content-Type: application/json" \
+      -H "Accept: application/json, text/event-stream" \
+      -H "Authorization: Bearer ${MCP_API_TOKEN}" \
+      -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"status-check","version":"1"}}}' \
+      | head -c 1000 | grep -q '"result"'
+    return
+  fi
   curl -sf --max-time 3 -X POST "$MCP_URL" \
     -H "Content-Type: application/json" \
     -H "Accept: application/json, text/event-stream" \
@@ -563,6 +572,28 @@ echo "$HTTP_WINDOW_TITLE"
 echo "URL: $MCP_URL"
 echo "Leave this window open while using Cursor or ChatGPT."
 echo
+if [[ -f $(printf '%q' "$PROJECT_DIR/.env") ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source $(printf '%q' "$PROJECT_DIR/.env")
+  set +a
+fi
+echo "Waiting for port 8000 to be free..."
+for _ in \$(seq 1 40); do
+  if $(printf '%q' "$PYTHON") - <<'PY'
+import socket
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+try:
+    sock.bind(("127.0.0.1", 8000))
+except OSError:
+    raise SystemExit(1)
+raise SystemExit(0)
+PY
+  then
+    break
+  fi
+  sleep 0.25
+done
 $(printf '%q' "$PYTHON") $(printf '%q' "$PROJECT_DIR/mcp_server.py")
 SCRIPT
 

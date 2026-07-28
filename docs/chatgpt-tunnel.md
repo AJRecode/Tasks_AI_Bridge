@@ -68,6 +68,8 @@ CONTROL_PLANE_TUNNEL_ID=tunnel_your_id_here
 TUNNEL_CLIENT_PROFILE=tasks-bridge
 ```
 
+**Inbound auth:** keep **`MCP_AUTH_MODE=none`** (or omit it) for ChatGPT. The tunnel forwards requests to localhost but does **not** send `Authorization: Bearer`. If you set `MCP_AUTH_MODE=static`, ChatGPT will get **401** from your MCP server. Static bearer is for Railway and Inspector testing — see [local-dev.md](local-dev.md).
+
 ---
 
 ## Daily use

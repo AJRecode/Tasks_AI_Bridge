@@ -1,16 +1,70 @@
 # Local development
 
-Tasks Bridge runs locally as a FastMCP HTTP server on port 8000. Cursor connects directly; ChatGPT uses the OpenAI Secure MCP Tunnel (see [chatgpt-tunnel.md](chatgpt-tunnel.md)).
+Tasks Bridge runs locally as a FastMCP HTTP server on port 8000. Default inbound auth is **`none`** (no bearer). See the [client access paths](../README.md#client-access-paths) in README — ChatGPT uses the tunnel; Cursor and Inspector hit localhost directly.
 
 ## Architecture (local)
 
+Matches README client access table — **ChatGPT + local tunnel** (works now):
+
 ```
-Cursor   →  http://127.0.0.1:8000/mcp
-ChatGPT  →  OpenAI tunnel  ←  tunnel-client  ←  http://127.0.0.1:8000/mcp
-Dev      →  MCP Inspector (:6274) → http://127.0.0.1:8000/mcp
+Cursor        →  http://127.0.0.1:8000/mcp     (none — no bearer by default)
+MCP Inspector →  http://127.0.0.1:8000/mcp     (none, or bearer if MCP_AUTH_MODE=static)
+ChatGPT       →  OpenAI tunnel ← tunnel-client ← localhost:8000/mcp
                               ↓
                     bridge/ + services/tasks/  →  Google Tasks API
 ```
+
+Set `MCP_AUTH_MODE=static` and `MCP_API_TOKEN` in `.env` to test bearer auth locally (required token in that mode). **Leave auth at `none` (default) if you use the ChatGPT tunnel** — `tunnel-client` does not send a bearer header.
+
+## `.env` file
+
+Copy `.env.example` to `.env`. The startup script and macOS MCP Server Terminal window **source `.env` on launch** so the server sees your variables.
+
+Comments use `#` (full-line or inline with whitespace before `#`):
+
+```bash
+# Inbound MCP auth — use none for ChatGPT tunnel; static to test Railway-style bearer
+MCP_AUTH_MODE=static
+MCP_API_TOKEN=your-secret-here
+
+# ChatGPT tunnel
+CONTROL_PLANE_API_KEY=...
+CONTROL_PLANE_TUNNEL_ID=...
+TUNNEL_CLIENT_PROFILE=tasks-bridge
+```
+
+| Variable | Local default | Notes |
+|---|---|---|
+| `MCP_AUTH_MODE` | `none` | `static` requires `MCP_API_TOKEN`; `oauth` is a stub |
+| `MCP_API_TOKEN` | unset | Required when mode is `static` |
+
+Generate a token:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+### Test static bearer with MCP Inspector
+
+1. Set `MCP_AUTH_MODE=static` and `MCP_API_TOKEN` in `.env`.
+2. Restart the MCP server (`./start_tasks_bridge.sh --stop` then `./start_tasks_bridge.sh`).
+3. Open Inspector (`http://127.0.0.1:6274` when started via `--windows`).
+4. **Server Entry** → expand **Authentication** → **Custom Headers** → **+ Add**:
+   - **Header name:** `Authorization`
+   - **Header value:** `Bearer <same value as MCP_API_TOKEN>`
+5. Do **not** fill in the OAuth 2.0 section — that is for OAuth servers, not static bearer.
+6. Connect to `http://127.0.0.1:8000/mcp`.
+
+Without the header you should get **401** with `WWW-Authenticate: Bearer realm="Tasks Bridge MCP"`.
+
+### Static bearer vs ChatGPT tunnel
+
+| Local setup | ChatGPT tunnel | Inspector / curl |
+|---|---|---|
+| `MCP_AUTH_MODE=none` (default) | Works | Works without bearer |
+| `MCP_AUTH_MODE=static` + token | **Broken** (tunnel has no bearer) | Works with `Authorization` header |
+
+Use `none` for daily ChatGPT + Cursor dev. Use `static` only when testing the same auth Railway uses.
 
 ## Platform support
 
@@ -53,7 +107,7 @@ TASKS_BRIDGE_WINDOW_GAP=8
 
 | Window title | Service |
 |---|---|
-| Tasks Bridge — MCP Server | `python mcp_server.py` |
+| Tasks Bridge — MCP Server | `python mcp_server.py` (sources `.env` first) |
 | Tasks Bridge — Tunnel | `tunnel-client` |
 | Tasks Bridge — Inspector | MCP Inspector UI |
 
@@ -69,7 +123,7 @@ defaults write com.apple.Terminal ShellNeverPromptsOnClose -bool true
 
 ### `--status` and tunnel “idle”
 
-`./start_tasks_bridge.sh --status` probes MCP with a real `initialize` request. For the tunnel, a running `tunnel-client` with a healthy MCP server reports **UP** even when idle — the tunnel connects **on demand** when ChatGPT calls, so an idle tunnel is normal, not STALE.
+`./start_tasks_bridge.sh --status` probes MCP with a real `initialize` request (includes the bearer token when `MCP_AUTH_MODE=static`). For the tunnel, a running `tunnel-client` with a healthy MCP server reports **UP** even when idle — the tunnel connects **on demand** when ChatGPT calls, so an idle tunnel is normal, not STALE.
 
 
 Open **separate terminal tabs** in Cursor (or any terminal emulator):

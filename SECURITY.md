@@ -4,7 +4,7 @@
 
 Never commit or publish:
 
-- `.env` — OpenAI tunnel API keys
+- `.env` — OpenAI tunnel API keys, `MCP_API_TOKEN`, and other secrets
 - `credentials.json` — Google OAuth client secret
 - `token.json` — Google access/refresh tokens
 - Any live refresh token or API key in docs, issues, or chat logs

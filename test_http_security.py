@@ -90,6 +90,7 @@ def test_unauthenticated_mcp_returns_401_before_handler(monkeypatch):
 
     assert response.status_code == 401
     assert response.json() == {"error": "Unauthorized"}
+    assert response.headers.get("www-authenticate") == "Bearer realm=\"Tasks Bridge MCP\""
     assert reached_handler["value"] is False
 
 

@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 LOGGER = logging.getLogger("tasks_bridge.auth.static")
 
 UNAUTHORIZED_BODY = {"error": "Unauthorized"}
+WWW_AUTHENTICATE = 'Bearer realm="Tasks Bridge MCP"'
 
 
 def _extract_bearer_token(scope: dict[str, Any]) -> str | None:
@@ -22,10 +23,13 @@ def _extract_bearer_token(scope: dict[str, Any]) -> str | None:
         if key.decode("latin-1").lower() != "authorization":
             continue
         header = value.decode("latin-1").strip()
-        prefix = "Bearer "
-        if header.startswith(prefix):
-            return header[len(prefix) :].strip()
-        return None
+        parts = header.split(None, 1)
+        if len(parts) != 2:
+            return None
+        scheme, token = parts[0], parts[1].strip()
+        if scheme.lower() != "bearer":
+            return None
+        return token or None
     return None
 
 
@@ -59,24 +63,38 @@ class BearerAuthASGI:
             LOGGER.warning(
                 "Rejected unauthenticated MCP request from %s", _client_ip(scope)
             )
-            await _send_json(send, status=401, body=UNAUTHORIZED_BODY)
+            await _send_json(
+                send,
+                status=401,
+                body=UNAUTHORIZED_BODY,
+                extra_headers=[(b"www-authenticate", WWW_AUTHENTICATE.encode("ascii"))],
+            )
             return
 
         await self.app(scope, receive, send)
 
 
-async def _send_json(send, *, status: int, body: dict[str, str]) -> None:
+async def _send_json(
+    send,
+    *,
+    status: int,
+    body: dict[str, str],
+    extra_headers: list[tuple[bytes, bytes]] | None = None,
+) -> None:
     import json
 
     payload = json.dumps(body).encode("utf-8")
+    headers = [
+        (b"content-type", b"application/json"),
+        (b"content-length", str(len(payload)).encode("ascii")),
+    ]
+    if extra_headers:
+        headers.extend(extra_headers)
     await send(
         {
             "type": "http.response.start",
             "status": status,
-            "headers": [
-                (b"content-type", b"application/json"),
-                (b"content-length", str(len(payload)).encode("ascii")),
-            ],
+            "headers": headers,
         }
     )
     await send({"type": "http.response.body", "body": payload})
@@ -88,10 +106,10 @@ class StaticBearerAuthProvider(AuthProvider):
         return "static"
 
     def validate_deployment(self) -> None:
-        if config.IS_PRODUCTION and not config.MCP_API_TOKEN:
+        if not config.MCP_API_TOKEN:
             raise RuntimeError(
-                "MCP_AUTH_MODE=static requires MCP_API_TOKEN in production. "
-                "Generate a long random secret and set it in Railway variables."
+                "MCP_AUTH_MODE=static requires MCP_API_TOKEN (local or production). "
+                "Generate a long random secret for .env or Railway variables."
             )
 
     def install_http_auth(self, fastmcp: FastMCP, *, mcp_path: str) -> None:

@@ -23,7 +23,7 @@ If you fork or deploy this project, you need **your own** [Google Cloud OAuth cl
 | **Railway + static bearer** (`MCP_AUTH_MODE=static`) | **Works now** | curl, scanners, MCP Inspector, compatible custom clients — **not** the ChatGPT connector UI |
 | **Railway + OAuth** (`MCP_AUTH_MODE=oauth`) | **Uncertain / exploratory** | ChatGPT over public HTTPS — may use external IdP; see [mcp-oauth-design.md](docs/mcp-oauth-design.md) |
 
-Inbound auth uses exactly one mode at a time: `none` (local default), `static` (production default), or `oauth` (stub until implemented). See `auth/` and [docs/railway.md](docs/railway.md).
+Inbound auth uses exactly one mode at a time: `none` (local default), `static` (production default; requires `MCP_API_TOKEN` everywhere), or `oauth` (stub). See `bridge/auth/` and [docs/railway.md](docs/railway.md).
 
 ## Quick start (local)
 
@@ -46,23 +46,24 @@ See [docs/local-dev.md](docs/local-dev.md) for Cursor, ChatGPT tunnel, and `star
 
 ### Local (your Mac)
 
+Default inbound auth: **`none`** (no bearer on `/mcp`). Set `MCP_AUTH_MODE=static` and `MCP_API_TOKEN` in `.env` to exercise bearer locally (Inspector Custom Header, curl). **Do not use `static` with the ChatGPT tunnel** — see [docs/local-dev.md](docs/local-dev.md).
+
 ```
-Cursor        →  http://127.0.0.1:8000/mcp
-MCP Inspector →  http://127.0.0.1:8000/mcp   (dev UI, optional)
-ChatGPT       →  OpenAI tunnel ← tunnel-client ← http://127.0.0.1:8000/mcp
+Cursor        →  http://127.0.0.1:8000/mcp          (none — no bearer)
+MCP Inspector →  http://127.0.0.1:8000/mcp          (none, or bearer if static mode)
+ChatGPT       →  OpenAI tunnel ← tunnel-client ← localhost:8000/mcp   (tunnel — not Railway)
                               ↓
-                    python mcp_server.py  (in .venv)
-                              ↓
-                    credentials.json + token.json  →  Google Tasks API
+                    mcp_server.py  →  bridge/ + services/tasks/  →  Google Tasks API
 ```
 
 | Concern | Local approach |
 |---|---|
 | **How you run it** | `./start_tasks_bridge.sh` or `python mcp_server.py` |
-| **Config** | Default — `config.deployment_mode()` returns `local` |
+| **Config** | Default — `deployment_mode()` returns `local` |
 | **Bind address** | `127.0.0.1:8000` |
+| **Inbound MCP auth** | `none` (default) — or `static` + `MCP_API_TOKEN` to test bearer |
 | **Google OAuth** | `credentials.json` + browser flow → `token.json` on disk |
-| **ChatGPT access** | `tunnel-client` exposes localhost (ChatGPT can't reach `127.0.0.1`) |
+| **ChatGPT access** | **Tunnel** → localhost ([client access table](#client-access-paths)) |
 | **Orchestration** | macOS: `./start_tasks_bridge.sh` (3 compact Terminal windows). Elsewhere: `--http` + `--tunnel` |
 
 Daily commands:
@@ -80,12 +81,16 @@ Daily commands:
 
 ### Railway (production)
 
-```
-GitHub  →  Railway (Dockerfile)  →  https://<app>.up.railway.app/mcp  →  curl / Inspector / custom clients
-                                              ↓                              (Bearer MCP_API_TOKEN)
-                                    GOOGLE_* env vars  →  Google Tasks API
+Production default inbound auth: **`static`** + **`MCP_API_TOKEN`**. ChatGPT does **not** use this URL today — see [client access table](#client-access-paths).
 
-ChatGPT (today)  →  OpenAI tunnel  ←  tunnel-client  ←  localhost:8000/mcp   (see mcp-oauth-design.md for Railway HTTPS)
+```
+GitHub  →  Railway  →  https://<app>.up.railway.app/mcp
+                              ↓
+              static bearer (MCP_API_TOKEN) — curl / Inspector / custom clients
+                              ↓
+              GOOGLE_* env vars  →  Google Tasks API
+
+ChatGPT (today)  →  OpenAI tunnel  ←  tunnel-client  ←  localhost:8000/mcp   (not Railway HTTPS)
 ```
 
 | Concern | Production approach |
@@ -93,9 +98,10 @@ ChatGPT (today)  →  OpenAI tunnel  ←  tunnel-client  ←  localhost:8000/mcp
 | **How you run it** | Railway builds and runs the `Dockerfile` on deploy |
 | **Config** | Auto — `RAILWAY_*` env sets `deployment_mode()` to `production` |
 | **Bind address** | `0.0.0.0:$PORT` |
+| **Inbound MCP auth** | `static` + `MCP_API_TOKEN` — 401 + `WWW-Authenticate: Bearer` without token |
 | **Google OAuth** | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` (no browser) |
-| **Inbound MCP auth** | `MCP_API_TOKEN` bearer on `/mcp` — works with curl, scanners, Inspector, compatible custom clients |
 | **ChatGPT access** | **Tunnel to localhost today** — Railway HTTPS for ChatGPT is **exploratory** ([OAuth exploration](docs/mcp-oauth-design.md)) |
+| **Rate limits** | Per-process, IP-keyed — proxy-sensitive on Railway ([docs/railway.md](docs/railway.md)) |
 | **Health check** | Railway hits `/health` (`railway.toml`) |
 
 ### What stays local-only
