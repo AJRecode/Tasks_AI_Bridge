@@ -1,13 +1,13 @@
 # Project Status
 
-* **Last updated:** July 27, 2026 (v1.5.0 security + orchestration fixes)
+* **Last updated:** July 27, 2026 (docs: Railway vs ChatGPT auth paths)
 * **Server version:** `1.5.0` (`bridge_diagnostics.py`)
 * **License:** MIT
 * **Deployment modes:** `local` (default) | `production` (Railway via env)
 
 ## Summary
 
-Tasks Bridge exposes **Google Tasks** to AI tools (ChatGPT, Cursor) through an MCP server. One Python codebase runs locally (native `.venv`) or on Railway (Docker). Local ChatGPT access uses the OpenAI Secure MCP Tunnel; production uses a public HTTPS MCP URL.
+Tasks Bridge exposes **Google Tasks** to AI tools (ChatGPT, Cursor) through an MCP server. One Python codebase runs locally (native `.venv`) or on Railway (Docker). **ChatGPT today** uses the OpenAI Secure MCP Tunnel to localhost. **Railway** exposes bearer-protected HTTPS for curl, scanners, MCP Inspector, and compatible custom clients. **Direct Railway → ChatGPT** is planned pending [MCP endpoint OAuth](docs/mcp-oauth-design.md).
 
 ## Architecture
 
@@ -24,15 +24,15 @@ Dev      →  MCP Inspector → http://127.0.0.1:8000/mcp
 ### Production (Railway)
 
 ```
-GitHub  →  Railway  →  https://<app>.up.railway.app/mcp  →  ChatGPT
+GitHub  →  Railway  →  https://<app>.up.railway.app/mcp  →  curl / Inspector / custom clients (Bearer)
                               ↓
                     google_auth (env vars)  →  Google Tasks API
 ```
 
-| Mode | Entry | Google auth | ChatGPT path |
-|---|---|---|---|
-| Local | `python mcp_server.py` / `start_tasks_bridge.sh` | `credentials.json` + `token.json` | `tunnel-client` → localhost |
-| Production | Docker / Railway | `GOOGLE_*` env vars | Public HTTPS MCP URL |
+| Mode | Entry | Google auth | ChatGPT path | Other MCP clients |
+|---|---|---|---|---|
+| Local | `python mcp_server.py` / `start_tasks_bridge.sh` | `credentials.json` + `token.json` | `tunnel-client` → localhost | `127.0.0.1:8000/mcp` (no bearer locally) |
+| Production | Docker / Railway | `GOOGLE_*` env vars | **Planned** — tunnel today; Railway HTTPS after [MCP OAuth](docs/mcp-oauth-design.md) | Bearer HTTPS: curl, scanners, Inspector, custom clients |
 
 ## MCP tools (10)
 
@@ -64,9 +64,9 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 ## Roadmap
 
-* [ ] First public GitHub release + Railway deploy
-* [ ] Verify ChatGPT against production HTTPS URL (blocked until MCP OAuth — use tunnel for ChatGPT today)
-* [ ] **MCP endpoint OAuth** for ChatGPT + Railway HTTPS — design: [docs/mcp-oauth-design.md](docs/mcp-oauth-design.md)
+* [ ] First public GitHub release + Railway deploy (bearer HTTPS for curl / scanners / Inspector / custom clients)
+* [ ] **Direct Railway → ChatGPT** — **planned**, blocked on MCP endpoint OAuth — design: [docs/mcp-oauth-design.md](docs/mcp-oauth-design.md)
+* [ ] ChatGPT continues on OpenAI tunnel until MCP OAuth ships
 * [ ] Optional: `tools/list_changed` + stateful HTTP for faster ChatGPT discovery
 
 ## Key files

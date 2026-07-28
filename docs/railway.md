@@ -1,11 +1,19 @@
 # Railway deployment
 
-Deploy Tasks Bridge as a public HTTPS MCP endpoint for ChatGPT (no local tunnel required).
+Deploy Tasks Bridge as a **bearer-protected** public HTTPS MCP endpoint (`MCP_API_TOKEN` on `/mcp`).
+
+**Works today:** curl, security scanners, MCP Inspector (with bearer header), and any compatible custom MCP client that sends `Authorization: Bearer …`.
+
+**ChatGPT today:** use the [OpenAI Secure MCP Tunnel](chatgpt-tunnel.md) to localhost — not Railway HTTPS. The ChatGPT connector UI supports OAuth, not static bearer tokens.
+
+> **Planned:** direct **Railway → ChatGPT** over HTTPS requires **MCP endpoint OAuth**. Design and phases: **[mcp-oauth-design.md](mcp-oauth-design.md)**.
 
 ```
-GitHub  →  push  →  Railway  →  https://<app>.up.railway.app/mcp  →  ChatGPT
+GitHub  →  push  →  Railway  →  https://<app>.up.railway.app/mcp  →  curl / Inspector / custom clients
                                               ↓
                                     Google Tasks API
+
+ChatGPT (today)  →  OpenAI tunnel  ←  tunnel-client  ←  localhost:8000/mcp
 ```
 
 Public or private GitHub repos both work — Railway connects via GitHub the same way.
@@ -72,7 +80,9 @@ This repo includes a `Dockerfile` and `railway.toml`.
 
 ## 4. Connect clients
 
-### ChatGPT (today: use the tunnel, not Railway HTTPS)
+### ChatGPT — tunnel today; Railway HTTPS planned
+
+**Status:** direct Railway → ChatGPT is **planned**, pending [MCP endpoint OAuth](mcp-oauth-design.md). Do not expect ChatGPT to connect to the public Railway URL until that work ships.
 
 The ChatGPT connector UI supports **OAuth**, not static bearer tokens. **`MCP_API_TOKEN` cannot be entered in ChatGPT today.**
 
@@ -82,11 +92,18 @@ For ChatGPT, keep using the **OpenAI Secure MCP Tunnel** to localhost (see [chat
 ChatGPT  →  OpenAI tunnel  ←  tunnel-client  ←  http://127.0.0.1:8000/mcp
 ```
 
-Your Mac runs MCP + tunnel; ChatGPT never hits the public Railway URL directly. Railway is optional for ChatGPT until MCP endpoint OAuth is implemented — see [mcp-oauth-design.md](mcp-oauth-design.md).
+Your Mac runs MCP + tunnel; ChatGPT never hits the public Railway URL directly. Railway deploy is optional for ChatGPT until OAuth is implemented — full design: **[mcp-oauth-design.md](mcp-oauth-design.md)**.
 
-### Other MCP clients (Railway HTTPS + bearer)
+### Bearer clients — Railway HTTPS works today
 
-For clients that can send `Authorization: Bearer …` headers, use:
+Bearer-protected Railway `/mcp` works now with:
+
+- **curl** — smoke tests and JSON-RPC probes
+- **Security scanners** — verify 401 without token, rate limits, etc.
+- **MCP Inspector** — point at the public URL and set the bearer header (dev/debug)
+- **Compatible custom MCP clients** — any client that can send `Authorization: Bearer …`
+
+For those clients, use:
 
 ```text
 https://<app>.up.railway.app/mcp
@@ -124,7 +141,8 @@ The server fails fast on preview boot when Google secrets are present unless `AL
 |---|---|---|
 | Bind address | `127.0.0.1:8000` | `0.0.0.0:$PORT` |
 | Google auth | `credentials.json` + browser | `GOOGLE_*` env vars |
-| ChatGPT path | `tunnel-client` → localhost (OpenAI tunnel auth) | Not direct HTTPS until MCP OAuth exists |
+| ChatGPT path | `tunnel-client` → localhost (OpenAI tunnel auth) | **Planned** — direct HTTPS after [MCP OAuth](mcp-oauth-design.md) |
+| Bearer clients | Optional locally | curl, scanners, Inspector, custom clients on public HTTPS |
 | Start script | `start_tasks_bridge.sh` | Docker `CMD` |
 | Inspector | Optional dev tool | Not used |
 
