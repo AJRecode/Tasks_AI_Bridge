@@ -18,3 +18,8 @@ credentials.json
 .vscode/
 .cursor/
 .DS_Store
+
+# macOS menu bar app build artifacts
+macos/menubar/.project_path
+macos/menubar/build/
+macos/menubar/dist/

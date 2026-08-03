@@ -79,6 +79,8 @@ Daily commands:
 ./start_tasks_bridge.sh --stop
 ```
 
+**macOS menu bar (one-click):** build [Tasks Bridge.app](docs/macos-menubar.md) with `./scripts/build-menubar-app.sh` — Start / Stop / Restart from the menu bar without Automator.
+
 **Platform note:** On **macOS**, the default opens three compact Terminal windows (MCP, tunnel, Inspector). In **Cursor** or on **Linux**, use **`--http`** and **`--tunnel`** in separate terminal tabs. See [docs/local-dev.md](docs/local-dev.md).
 
 ### Railway (production)

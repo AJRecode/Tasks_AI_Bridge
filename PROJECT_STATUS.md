@@ -1,6 +1,6 @@
 # Project Status
 
-* **Last updated:** July 27, 2026 21:45 ET (v1.6.4 — production HTTP integration tests)
+* **Last updated:** August 3, 2026 17:05 ET (macOS menu bar app)
 * **Server version:** `1.6.4` (`bridge/diagnostics/`)
 * **License:** MIT
 * **Deployment modes:** `local` (default) | `production` (Railway via env)
@@ -55,6 +55,7 @@ GitHub  →  Railway  →  https://<app>.up.railway.app/mcp  →  curl / Inspect
 | Google Tasks API (local) | `python test_task_services.py "General"` (requires OAuth files) |
 | MCP HTTP + `/health` | `curl http://127.0.0.1:8000/health` |
 | Local orchestration | `./start_tasks_bridge.sh --status` (tunnel idle = UP, not STALE) |
+| macOS menu bar app | `./scripts/build-menubar-app.sh` → [docs/macos-menubar.md](docs/macos-menubar.md) |
 | Railway artifacts | `Dockerfile`, `railway.toml`, `/health` route |
 | GitHub CI | `.github/workflows/ci.yml` — pytest, pip-audit, bandit on push/PR |
 | Inbound auth | `bridge/auth/` — `static` requires `MCP_API_TOKEN` (local + prod); 401 + `WWW-Authenticate` |
@@ -101,6 +102,8 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 | `.github/workflows/ci.yml` | CI: unit tests + dependency audit + security scan |
 | `.github/dependabot.yml` | Automated dependency update PRs |
 | `scripts/check.sh` | Local pre-push gate (mirrors CI) |
+| `scripts/build-menubar-app.sh` | Build macOS menu bar Tasks Bridge.app |
+| `docs/macos-menubar.md` | Menu bar app setup |
 
 ## Docs
 
@@ -110,8 +113,8 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 ## Recent result
 
-v1.6.4: `bootstrap_http_server()` mirrors production startup; consolidated HTTP integration test via `create_server()` + real middleware path; mocked task-tool regression tests; README/Railway docs clarify ChatGPT (tunnel/OAuth) vs static bearer clients; removed unused `http_security.py` shim.
+macOS menu bar app: `tasks_bridge_menubar.py` + `build-menubar-app.sh` (thin `.app` wrapper, no py2app); **TB** menu bar label with Start / Stop / Restart / Status; docs at `docs/macos-menubar.md`.
 
 ## Next action
 
-Commit and push, or restart MCP locally: `./start_tasks_bridge.sh`
+Build and add to Login Items: `./scripts/build-menubar-app.sh` → copy to `/Applications/` → System Settings → Login Items.
