@@ -164,10 +164,29 @@ def install_http_security(fastmcp: FastMCP, *, mcp_path: str) -> None:
     fastmcp.streamable_http_app = streamable_http_app_with_security
 
 
+_GOOGLE_RESEED_MESSAGE = (
+    "Google Tasks credentials were rejected (invalid_grant). On Railway, re-seed "
+    "GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REFRESH_TOKEN from local "
+    "token.json — use refresh_token, not access_token; no extra quotes."
+)
+
+
+def _is_google_credential_error(exc: Exception) -> bool:
+    from google.auth.exceptions import RefreshError
+
+    if isinstance(exc, RefreshError):
+        return True
+    text = str(exc)
+    return "invalid_grant" in text.lower() or "GOOGLE_" in text
+
+
 def production_safe_tool_error(exc: Exception) -> RuntimeError:
     """Return a client-safe tool error while logging the original failure."""
     if isinstance(exc, ValueError):
         raise exc
+    if _is_google_credential_error(exc):
+        LOGGER.exception("Google Tasks credentials failed")
+        raise ValueError(_GOOGLE_RESEED_MESSAGE)
     LOGGER.exception("Tool execution failed")
     if config.IS_PRODUCTION:
         return RuntimeError("Request failed.")

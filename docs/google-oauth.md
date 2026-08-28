@@ -18,7 +18,7 @@ Each Tasks Bridge deployment needs its **own** Google Cloud OAuth credentials. Y
 
 ### Testing mode limits
 
-Apps in **Testing** publishing status are limited to users listed as test users (typically ~100). That is fine for personal use. To allow arbitrary Google accounts, you must complete Google's verification process — not required for a single-user bridge.
+Apps in **Testing** publishing status are limited to users listed as test users (typically ~100). That is fine for personal use. **Refresh tokens expire after 7 days** in Testing. After that, `get_credentials` hits `invalid_grant`. Locally, **1.8.4** re-opens the desktop login; or move `token.json` aside and re-run `python test_task_services.py "General"`. For Railway, copy the new `refresh_token` into `GOOGLE_REFRESH_TOKEN`. Publishing the consent screen to **Production** (still only your account) avoids the 7-day expiry. To allow arbitrary Google accounts you must complete Google's verification — not required for a single-user bridge.
 
 ## 3. OAuth client (Desktop)
 

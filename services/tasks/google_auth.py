@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -23,6 +24,13 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from bridge import config
 
 SCOPES = ["https://www.googleapis.com/auth/tasks"]
+
+_RESEED_GOOGLE = (
+    "GOOGLE_* environment credentials were rejected (invalid_grant). "
+    "Re-seed GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REFRESH_TOKEN "
+    "from a freshly authorized local token.json (use refresh_token, not the "
+    "access token). Google OAuth apps in Testing expire refresh tokens after 7 days."
+)
 
 
 def _stored_token_scopes_from_file() -> set[str]:
@@ -96,11 +104,17 @@ def get_credentials() -> Credentials:
         # google.oauth2.Credentials.expired is False when expiry is unset, so
         # "expired and refresh_token" never refreshes that production path.
         if env_creds.refresh_token:
-            return _refresh_credentials(env_creds)
-        raise RuntimeError(
-            "GOOGLE_* environment credentials are invalid. "
-            "Re-seed GOOGLE_REFRESH_TOKEN or GOOGLE_TOKEN_JSON."
-        )
+            try:
+                return _refresh_credentials(env_creds)
+            except RefreshError:
+                if config.IS_PRODUCTION:
+                    raise RuntimeError(_RESEED_GOOGLE) from None
+                # Local GOOGLE_* in .env is stale; fall through to token.json / browser.
+        else:
+            raise RuntimeError(
+                "GOOGLE_* environment credentials are invalid. "
+                "Re-seed GOOGLE_REFRESH_TOKEN or GOOGLE_TOKEN_JSON."
+            )
 
     if config.IS_PRODUCTION:
         raise RuntimeError(
@@ -117,10 +131,12 @@ def get_credentials() -> Credentials:
         return creds
 
     if creds and creds.refresh_token:
-        creds = _refresh_credentials(creds)
-        if not config.IS_PRODUCTION:
+        try:
+            creds = _refresh_credentials(creds)
             config.TOKEN_FILE.write_text(creds.to_json())
-        return creds
+            return creds
+        except RefreshError:
+            pass
 
     creds = _run_local_auth_flow()
     config.TOKEN_FILE.write_text(creds.to_json())

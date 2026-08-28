@@ -1,7 +1,7 @@
 # Project Status
 
-* **Last updated:** August 28, 2026 1:15 ET (Google refresh-token-only Railway path; SERVER_VERSION 1.8.3)
-* **Server version:** `1.8.3` (`bridge/diagnostics/`)
+* **Last updated:** August 28, 2026 1:40 ET (local invalid_grant reopens desktop OAuth; SERVER_VERSION 1.8.4)
+* **Server version:** `1.8.4` (`bridge/diagnostics/`)
 * **License:** MIT
 * **Deployment modes:** `local` (default) | `production` (Railway via env)
 * **Inbound auth modes:** `none` (local) | `static` (Railway bearer) | `oauth` (WorkOS/AuthKit resource server)
@@ -65,7 +65,7 @@ curl / Inspector                → same URL with static bearer (MCP_AUTH_MODE=s
 | HTTP hardening | `bridge/transport/` — per-process rate limits (proxy-sensitive), size limits |
 | Dependabot | `.github/dependabot.yml` — weekly pip, Docker, Actions updates |
 
-ChatGPT → Railway OAuth handshake **worked** 2026-08-28 (`openai-mcp` initialize, `POST /mcp` 200, server 1.8.2). `get_task_lists` then failed: `GOOGLE_* environment credentials are invalid` because production refresh-token-only creds never called Google’s refresh (fixed in **1.8.3**).
+ChatGPT → Railway OAuth handshake **worked** 2026-08-28 (`openai-mcp` initialize, `POST /mcp` 200). `get_task_lists` then failed Google `invalid_grant` (ChatGPT surfaced INVALID_ARGUMENT). Local `test_task_services.py` hit the same refresh error and **never opened a browser** (1.8.3 always refreshed a dead `token.json`). **1.8.4** maps production RefreshError to a re-seed message and locally re-runs the desktop OAuth flow on `invalid_grant`.
 
 ## Runtime status
 
@@ -75,7 +75,7 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 * **ChatGPT tool discovery lag** — new MCP tools may appear in Inspector before ChatGPT exposes them. See [docs/chatgpt-discovery.md](docs/chatgpt-discovery.md).
 * **ChatGPT plugin UI** — OAuth / No auth / Mixed only (no bearer Token). Direct Railway ChatGPT requires `MCP_AUTH_MODE=oauth`.
-* **ChatGPT New Bridges** — OAuth to `/mcp` works on **1.8.2**. Google Tasks then failed until **1.8.3** (refresh `GOOGLE_REFRESH_TOKEN` when the access token/expiry are unset). `tasksbridge-production` (no **ai**) is a dead Railway hostname — do not use it.
+* **ChatGPT New Bridges** — OAuth to `/mcp` works. `get_task_lists` then hit Google `invalid_grant` (ChatGPT labeled INVALID_ARGUMENT). Local re-run of `test_task_services.py` failed the same way until **1.8.4** re-opens desktop OAuth on revoked/Testing-expired refresh tokens. Re-seed Railway `GOOGLE_*` after a fresh `token.json`. `tasksbridge-production` (no **ai**) is a dead hostname.
 * **WorkOS “Set as default”** on a single resource indicator may be hidden; ChatGPT should still send `resource=` the `/mcp` URL.
 * **`tools/list_changed` not enabled** — optional future enhancement.
 * **ChatGPT tunnel + `MCP_AUTH_MODE=static`** — incompatible; tunnel does not send bearer. Use `none` locally for ChatGPT.
@@ -120,8 +120,8 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 ## Recent result
 
-ChatGPT **New Bridges** connected to Railway **1.8.2** (`client_name: openai-mcp`, `POST /mcp` 200). `get_task_lists` raised `GOOGLE_* environment credentials are invalid` because env creds are a refresh token with `token=None` / unset expiry, so Google’s `expired` flag stayed false and refresh never ran. **1.8.3** refreshes whenever a refresh token is present.
+ChatGPT **New Bridges** authenticated on **1.8.3**. `get_task_lists` failed with Google `RefreshError: invalid_grant`. Local re-auth also failed: 1.8.3 refreshes whenever `refresh_token` exists, so a Testing-mode (7-day) token never reached the browser. **1.8.4** (uncommitted) locally re-runs desktop OAuth on `invalid_grant`; production raises a re-seed `GOOGLE_*` message.
 
 ## Next action
 
-**1.8.3** is on `main`. Railway autodeploy is broken while Settings → Source shows **GitHub Repo not found** — use **⌘K → Deploy Latest Commit** (not Redeploy) until that banner is gone. Confirm `GOOGLE_*` on the service, then ask ChatGPT (New Bridges on) to list task lists. Keep **AJ Task MCP** unchanged. Reconnect GitHub on the AJRecode org so future pushes deploy themselves.
+**Now:** `mv token.json token.json.bak && python test_task_services.py "General"` (browser should open). Then copy `refresh_token` + matching `client_id`/`client_secret` to Railway `GOOGLE_*`. Ask to commit/push 1.8.4 so production error text is clearer. Keep **AJ Task MCP** unchanged.
