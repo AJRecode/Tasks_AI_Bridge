@@ -92,7 +92,10 @@ def get_credentials() -> Credentials:
     if env_creds is not None:
         if env_creds.valid:
             return env_creds
-        if env_creds.expired and env_creds.refresh_token:
+        # Railway typically has only a refresh token (token=None, expiry=None).
+        # google.oauth2.Credentials.expired is False when expiry is unset, so
+        # "expired and refresh_token" never refreshes that production path.
+        if env_creds.refresh_token:
             return _refresh_credentials(env_creds)
         raise RuntimeError(
             "GOOGLE_* environment credentials are invalid. "
@@ -113,7 +116,7 @@ def get_credentials() -> Credentials:
     if creds and creds.valid:
         return creds
 
-    if creds and creds.expired and creds.refresh_token:
+    if creds and creds.refresh_token:
         creds = _refresh_credentials(creds)
         if not config.IS_PRODUCTION:
             config.TOKEN_FILE.write_text(creds.to_json())

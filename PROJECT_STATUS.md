@@ -1,7 +1,7 @@
 # Project Status
 
-* **Last updated:** August 28, 2026 12:45 ET (WorkOS Users API email allowlist; SERVER_VERSION 1.8.2)
-* **Server version:** `1.8.2` (`bridge/diagnostics/`)
+* **Last updated:** August 28, 2026 1:15 ET (Google refresh-token-only Railway path; SERVER_VERSION 1.8.3)
+* **Server version:** `1.8.3` (`bridge/diagnostics/`)
 * **License:** MIT
 * **Deployment modes:** `local` (default) | `production` (Railway via env)
 * **Inbound auth modes:** `none` (local) | `static` (Railway bearer) | `oauth` (WorkOS/AuthKit resource server)
@@ -65,7 +65,7 @@ curl / Inspector                → same URL with static bearer (MCP_AUTH_MODE=s
 | HTTP hardening | `bridge/transport/` — per-process rate limits (proxy-sensitive), size limits |
 | Dependabot | `.github/dependabot.yml` — weekly pip, Docker, Actions updates |
 
-ChatGPT → Railway OAuth handshake is **not** verified until a new ChatGPT plugin completes AuthKit login against the oauth deploy.
+ChatGPT → Railway OAuth handshake **worked** 2026-08-28 (`openai-mcp` initialize, `POST /mcp` 200, server 1.8.2). `get_task_lists` then failed: `GOOGLE_* environment credentials are invalid` because production refresh-token-only creds never called Google’s refresh (fixed in **1.8.3**).
 
 ## Runtime status
 
@@ -75,7 +75,7 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 * **ChatGPT tool discovery lag** — new MCP tools may appear in Inspector before ChatGPT exposes them. See [docs/chatgpt-discovery.md](docs/chatgpt-discovery.md).
 * **ChatGPT plugin UI** — OAuth / No auth / Mixed only (no bearer Token). Direct Railway ChatGPT requires `MCP_AUTH_MODE=oauth`.
-* **ChatGPT New Bridges Reconnect (2026-08-28)** — plugin URL is correct (`tasksaibridge-production` with **ai**), OAuth selected. 1.8.1 is live; Railway logs show JWT with no `email`, then `POST …/oauth2/userinfo` **401**, then `Rejected MCP OAuth token for email None`. Connect MCP resource tokens are not valid at AuthKit userinfo. **1.8.2** tries OIDC GET userinfo, then WorkOS Users API by `sub` (`WORKOS_API_KEY`), optional `MCP_OAUTH_ALLOWED_SUB`. `tasksbridge-production` (no **ai**) is a dead Railway hostname — do not use it.
+* **ChatGPT New Bridges** — OAuth to `/mcp` works on **1.8.2**. Google Tasks then failed until **1.8.3** (refresh `GOOGLE_REFRESH_TOKEN` when the access token/expiry are unset). `tasksbridge-production` (no **ai**) is a dead Railway hostname — do not use it.
 * **WorkOS “Set as default”** on a single resource indicator may be hidden; ChatGPT should still send `resource=` the `/mcp` URL.
 * **`tools/list_changed` not enabled** — optional future enhancement.
 * **ChatGPT tunnel + `MCP_AUTH_MODE=static`** — incompatible; tunnel does not send bearer. Use `none` locally for ChatGPT.
@@ -120,8 +120,8 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 ## Recent result
 
-**1.8.1** is live on Railway. ChatGPT sends a valid WorkOS Connect JWT (no `email` claim); AuthKit `POST /oauth2/userinfo` returns **401**, so email stays `None` and `/mcp` 401s. Connect MCP resource tokens are not valid at userinfo. **1.8.2** tries OIDC `GET` userinfo with Bearer, then WorkOS Users API `GET /user_management/users/{sub}` using `WORKOS_API_KEY`, and optional `MCP_OAUTH_ALLOWED_SUB`. Email allowlist remains `MCP_OAUTH_ALLOWED_EMAIL`. Not live until Railway redeploys with `WORKOS_API_KEY`.
+ChatGPT **New Bridges** connected to Railway **1.8.2** (`client_name: openai-mcp`, `POST /mcp` 200). `get_task_lists` raised `GOOGLE_* environment credentials are invalid` because env creds are a refresh token with `token=None` / unset expiry, so Google’s `expired` flag stayed false and refresh never ran. **1.8.3** refreshes whenever a refresh token is present.
 
 ## Next action
 
-Set Railway `WORKOS_API_KEY` (WorkOS Dashboard → Developer → API Keys), redeploy **1.8.2**, then **fresh Reconnect** of New Bridges in ChatGPT (URL stays `https://tasksaibridge-production.up.railway.app/mcp`). Keep **AJ Task MCP** unchanged. Success logs: `Resolved MCP OAuth email from WorkOS Users API` then `POST /mcp` 200. If API key is missing: `WORKOS_API_KEY is unset`.
+**1.8.3** is on `main`. Railway autodeploy is broken while Settings → Source shows **GitHub Repo not found** — use **⌘K → Deploy Latest Commit** (not Redeploy) until that banner is gone. Confirm `GOOGLE_*` on the service, then ask ChatGPT (New Bridges on) to list task lists. Keep **AJ Task MCP** unchanged. Reconnect GitHub on the AJRecode org so future pushes deploy themselves.

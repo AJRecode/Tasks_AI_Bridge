@@ -67,7 +67,7 @@ Set in the Railway dashboard (Settings → Variables):
 | `MCP_OAUTH_EXTRA_AUDIENCES` | Optional | Extra JWT `aud` values if ChatGPT omits `resource` |
 | `GOOGLE_CLIENT_ID` | Yes | From OAuth client |
 | `GOOGLE_CLIENT_SECRET` | Yes | From OAuth client |
-| `GOOGLE_REFRESH_TOKEN` | Yes | From local `token.json` |
+| `GOOGLE_REFRESH_TOKEN` | Yes | From local `token.json`. **1.8.3** refreshes this even when Google’s library leaves `expiry` unset (the usual Railway-only-refresh-token case). |
 | `TASKS_BRIDGE_DEPLOYMENT` | Optional | Auto-detected from `RAILWAY_*`; set to `production` to force |
 | `MCP_PUBLIC_HOST` | Optional | Auto-set from `RAILWAY_PUBLIC_DOMAIN` on Railway |
 | `MCP_RATE_LIMIT_REQUESTS` | Optional | Default `60` requests/window/IP on `/mcp` — **per process**, proxy-sensitive (see below) |
