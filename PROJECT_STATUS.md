@@ -1,7 +1,7 @@
 # Project Status
 
-* **Last updated:** August 28, 2026 10:30 ET (WorkOS MCP OAuth resource server)
-* **Server version:** `1.7.0` (`bridge/diagnostics/`)
+* **Last updated:** August 28, 2026 11:30 ET (pip-audit CVE pin bump: cryptography 50.0.1, PyJWT 2.13.0)
+* **Server version:** `1.7.0` (`bridge/diagnostics/` — unchanged; dep-only fix)
 * **License:** MIT
 * **Deployment modes:** `local` (default) | `production` (Railway via env)
 * **Inbound auth modes:** `none` (local) | `static` (Railway bearer) | `oauth` (WorkOS/AuthKit resource server)
@@ -78,6 +78,7 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 * **WorkOS “Set as default”** on a single resource indicator may be hidden; ChatGPT should still send `resource=` the `/mcp` URL.
 * **`tools/list_changed` not enabled** — optional future enhancement.
 * **ChatGPT tunnel + `MCP_AUTH_MODE=static`** — incompatible; tunnel does not send bearer. Use `none` locally for ChatGPT.
+* **cryptography >= 49 dropped x86_64 macOS wheels.** CI (Ubuntu) and Railway (Linux) install `cryptography==50.0.1` fine. A local Rosetta / Intel `python` cannot `pip install` that pin from wheels; use native arm64 Python 3.11.
 
 ## Roadmap
 
@@ -118,8 +119,8 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 ## Recent result
 
-`MCP_AUTH_MODE=oauth` implemented as a WorkOS/AuthKit resource server: JWT verify via JWKS, email allowlist, RFC 9728 metadata, 401 `resource_metadata`. Railway static `/health` already works. ChatGPT handshake not yet attempted.
+Pinned patched deps so CI `pip-audit` can pass: `cryptography==48.0.1` → `50.0.1` (CVE-2026-69247 / 69248 / 69249) and `PyJWT==2.10.1` → `2.13.0` (CVE-2025-45768 last-affected 2.10.1, plus 2026 PyJWT advisories). No MCP tool or `SERVER_VERSION` change. Local pytest 45 passed; pip-audit of the new pins reported no known vulnerabilities. OAuth verifier code unchanged (`bridge/auth/oauth.py` still uses PyJWT + JWKS).
 
 ## Next action
 
-Push this code, then on Railway set `MCP_AUTH_MODE=oauth`, `WORKOS_AUTHKIT_DOMAIN`, and `MCP_OAUTH_ALLOWED_EMAIL` (AuthKit login Gmail — Railway variable only). Create a new ChatGPT plugin with OAuth; keep the tunnel plugin until it works.
+Push the requirements pin bump (not committed this session) so `test-and-scan` on `main` goes green. Then on Railway set `MCP_AUTH_MODE=oauth`, `WORKOS_AUTHKIT_DOMAIN`, and `MCP_OAUTH_ALLOWED_EMAIL`. Create a new ChatGPT plugin with OAuth; keep the tunnel plugin until it works.
