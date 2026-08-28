@@ -62,7 +62,9 @@ MCP_API_TOKEN = os.environ.get("MCP_API_TOKEN", "").strip()
 
 # MCP OAuth resource-server mode (WorkOS/AuthKit)
 WORKOS_AUTHKIT_DOMAIN = os.environ.get("WORKOS_AUTHKIT_DOMAIN", "").strip()
+WORKOS_API_KEY = os.environ.get("WORKOS_API_KEY", "").strip()
 MCP_OAUTH_ALLOWED_EMAIL = os.environ.get("MCP_OAUTH_ALLOWED_EMAIL", "").strip()
+MCP_OAUTH_ALLOWED_SUB = os.environ.get("MCP_OAUTH_ALLOWED_SUB", "").strip()
 MCP_OAUTH_EXTRA_AUDIENCES = os.environ.get("MCP_OAUTH_EXTRA_AUDIENCES", "").strip()
 
 # HTTP hardening
@@ -133,6 +135,15 @@ def oauth_allowed_emails() -> frozenset[str]:
     return frozenset(
         part.strip().lower()
         for part in MCP_OAUTH_ALLOWED_EMAIL.split(",")
+        if part.strip()
+    )
+
+
+def oauth_allowed_subs() -> frozenset[str]:
+    """WorkOS user ids (JWT ``sub``) allowed when email cannot be resolved."""
+    return frozenset(
+        part.strip()
+        for part in MCP_OAUTH_ALLOWED_SUB.split(",")
         if part.strip()
     )
 

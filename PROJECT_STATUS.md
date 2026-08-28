@@ -1,7 +1,7 @@
 # Project Status
 
-* **Last updated:** August 28, 2026 12:20 ET (WorkOS userinfo email allowlist; SERVER_VERSION 1.8.1)
-* **Server version:** `1.8.1` (`bridge/diagnostics/`)
+* **Last updated:** August 28, 2026 12:45 ET (WorkOS Users API email allowlist; SERVER_VERSION 1.8.2)
+* **Server version:** `1.8.2` (`bridge/diagnostics/`)
 * **License:** MIT
 * **Deployment modes:** `local` (default) | `production` (Railway via env)
 * **Inbound auth modes:** `none` (local) | `static` (Railway bearer) | `oauth` (WorkOS/AuthKit resource server)
@@ -75,7 +75,7 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 * **ChatGPT tool discovery lag** — new MCP tools may appear in Inspector before ChatGPT exposes them. See [docs/chatgpt-discovery.md](docs/chatgpt-discovery.md).
 * **ChatGPT plugin UI** — OAuth / No auth / Mixed only (no bearer Token). Direct Railway ChatGPT requires `MCP_AUTH_MODE=oauth`.
-* **ChatGPT New Bridges Reconnect (2026-08-28)** — plugin URL is correct (`tasksaibridge-production` with **ai**), OAuth selected. 1.8.0 discovery is live; Railway logs then showed `Rejected MCP OAuth token for email None` because WorkOS Connect access tokens omit `email`. Fix in **1.8.1** (userinfo lookup + PRM scopes on FastMCP’s `/mcp` well-known path). `tasksbridge-production` (no **ai**) is a dead Railway hostname — do not use it.
+* **ChatGPT New Bridges Reconnect (2026-08-28)** — plugin URL is correct (`tasksaibridge-production` with **ai**), OAuth selected. 1.8.1 is live; Railway logs show JWT with no `email`, then `POST …/oauth2/userinfo` **401**, then `Rejected MCP OAuth token for email None`. Connect MCP resource tokens are not valid at AuthKit userinfo. **1.8.2** tries OIDC GET userinfo, then WorkOS Users API by `sub` (`WORKOS_API_KEY`), optional `MCP_OAUTH_ALLOWED_SUB`. `tasksbridge-production` (no **ai**) is a dead Railway hostname — do not use it.
 * **WorkOS “Set as default”** on a single resource indicator may be hidden; ChatGPT should still send `resource=` the `/mcp` URL.
 * **`tools/list_changed` not enabled** — optional future enhancement.
 * **ChatGPT tunnel + `MCP_AUTH_MODE=static`** — incompatible; tunnel does not send bearer. Use `none` locally for ChatGPT.
@@ -120,8 +120,8 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 ## Recent result
 
-ChatGPT **New Bridges** Reconnect reaches `/mcp` with a WorkOS JWT but 1.8.0 rejected it (`email None`). WorkOS Connect access tokens do not carry `email` (ID token / `POST /oauth2/userinfo` do). **1.8.1** resolves email from AuthKit userinfo, keeps `MCP_OAUTH_ALLOWED_EMAIL`, and serves PRM with `email`/`openid`/`profile`/`offline_access` on FastMCP’s `/.well-known/oauth-protected-resource/mcp` path. Not live until Railway redeploys.
+**1.8.1** is live on Railway. ChatGPT sends a valid WorkOS Connect JWT (no `email` claim); AuthKit `POST /oauth2/userinfo` returns **401**, so email stays `None` and `/mcp` 401s. Connect MCP resource tokens are not valid at userinfo. **1.8.2** tries OIDC `GET` userinfo with Bearer, then WorkOS Users API `GET /user_management/users/{sub}` using `WORKOS_API_KEY`, and optional `MCP_OAUTH_ALLOWED_SUB`. Email allowlist remains `MCP_OAUTH_ALLOWED_EMAIL`. Not live until Railway redeploys with `WORKOS_API_KEY`.
 
 ## Next action
 
-Redeploy Railway with **1.8.1**, then **Reconnect New Bridges** in ChatGPT (URL stays `https://tasksaibridge-production.up.railway.app/mcp`). Keep **AJ Task MCP** unchanged. Confirm Railway HTTP logs: `POST /mcp` 200 (or initialize success) instead of `Rejected MCP OAuth token for email None`. WorkOS Connect still needs CIMD/DCR and resource indicator `https://tasksaibridge-production.up.railway.app/mcp`.
+Set Railway `WORKOS_API_KEY` (WorkOS Dashboard → Developer → API Keys), redeploy **1.8.2**, then **fresh Reconnect** of New Bridges in ChatGPT (URL stays `https://tasksaibridge-production.up.railway.app/mcp`). Keep **AJ Task MCP** unchanged. Success logs: `Resolved MCP OAuth email from WorkOS Users API` then `POST /mcp` 200. If API key is missing: `WORKOS_API_KEY is unset`.

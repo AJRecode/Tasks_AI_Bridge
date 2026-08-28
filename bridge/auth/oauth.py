@@ -24,6 +24,7 @@ LOGGER = logging.getLogger("tasks_bridge.auth.oauth")
 
 _JWT_ALGORITHMS = ("RS256", "ES256")
 _JWT_LEEWAY_SECONDS = 60
+_WORKOS_API_BASE = "https://api.workos.com"
 
 # AuthKit's advertised OIDC/MCP scopes. Listed on PRM so ChatGPT can request
 # refresh tokens (offline_access) during connector setup.
@@ -93,9 +94,9 @@ def email_from_claims(claims: dict[str, Any]) -> str | None:
     """Extract a lowercase email from a WorkOS access token, ID token, or userinfo.
 
     WorkOS Connect MCP access tokens typically omit ``email`` (only ``sub``,
-    ``org_id``, ``sid``, ``jti``). Email lives on the ID token and
-    ``POST /oauth2/userinfo``. Also check ``preferred_username`` / ``act.sub``
-    when they look like addresses.
+    ``org_id``, ``sid``, ``jti``). Email lives on the ID token, OIDC userinfo
+    when the token is valid there, or WorkOS Users API ``GET /users/{sub}``.
+    Also check ``preferred_username`` / ``act.sub`` when they look like addresses.
     """
     for key in ("email", "preferred_username", "username", "upn", "unique_name"):
         found = _email_from_value(claims.get(key))
@@ -129,6 +130,23 @@ def claim_keys(claims: dict[str, Any]) -> list[str]:
     return sorted(str(key) for key in claims)
 
 
+def scope_claim_text(claims: dict[str, Any]) -> str:
+    """Space-separated ``scope`` / ``scp`` claim — never the raw token."""
+    raw = claims.get("scope")
+    if raw is None:
+        raw = claims.get("scp")
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, (list, tuple)):
+        return " ".join(str(part) for part in raw if part)
+    return ""
+
+
+def is_workos_user_id(subject: str) -> bool:
+    """True when ``sub`` looks like a WorkOS User Management id (``user_…``)."""
+    return subject.startswith("user_") and "/" not in subject and ".." not in subject
+
+
 def audience_values(claim: Any) -> list[str]:
     if claim is None:
         return []
@@ -160,36 +178,83 @@ async def fetch_authkit_well_known(issuer: str, document: str) -> Response:
 async def fetch_authkit_userinfo(issuer: str, token: str) -> dict[str, Any] | None:
     """Resolve identity from AuthKit userinfo (WorkOS Connect access tokens omit email).
 
-    WorkOS documents ``POST {issuer}/oauth2/userinfo`` with the access token.
-    OIDC clients often ``GET`` the same path; try POST then GET.
+    OIDC UserInfo is ``GET`` with ``Authorization: Bearer``. WorkOS Connect
+    documents ``POST {issuer}/oauth2/userinfo``. Try GET then POST.
+
+    Connect MCP resource-indicator tokens (``aud`` = the MCP URL) commonly
+    401 here: they are not minted for the userinfo resource, and ``email``
+    requires the ``openid`` + ``email`` scopes on a token that userinfo accepts.
     """
     url = f"{issuer.rstrip('/')}/oauth2/userinfo"
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/json",
     }
+    last_status: int | None = None
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
-            for method in ("POST", "GET"):
+            for method in ("GET", "POST"):
                 response = await client.request(method, url, headers=headers)
+                last_status = response.status_code
                 if response.status_code == 200:
                     payload = response.json()
                     if isinstance(payload, dict):
                         return payload
                     LOGGER.info("AuthKit userinfo returned non-object JSON")
                     return None
-                if response.status_code in (404, 405):
-                    continue
                 LOGGER.info(
                     "AuthKit userinfo %s returned HTTP %s",
                     method,
                     response.status_code,
                 )
-                return None
     except (httpx.HTTPError, ValueError):
         LOGGER.exception("Failed to fetch AuthKit userinfo")
         return None
-    LOGGER.info("AuthKit userinfo endpoint not available via POST or GET")
+    if last_status in (401, 403):
+        LOGGER.info(
+            "AuthKit userinfo rejected this access token (HTTP %s). "
+            "Connect MCP resource tokens are often invalid at /oauth2/userinfo",
+            last_status,
+        )
+    return None
+
+
+async def fetch_workos_user_by_id(
+    user_id: str, api_key: str
+) -> dict[str, Any] | None:
+    """Look up email via WorkOS User Management ``GET /user_management/users/{id}``.
+
+    WorkOS MCP token verification uses JWT ``sub`` as the user id. That id is
+    not valid at AuthKit userinfo for resource-indicator tokens; the Users API
+    is the server-side way to resolve email with ``WORKOS_API_KEY``.
+    """
+    if not api_key or not is_workos_user_id(user_id):
+        return None
+    url = f"{_WORKOS_API_BASE}/user_management/users/{user_id}"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Accept": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            response = await client.get(url, headers=headers)
+    except httpx.HTTPError:
+        LOGGER.exception("Failed to fetch WorkOS user %s", user_id)
+        return None
+    if response.status_code == 200:
+        payload = response.json()
+        if isinstance(payload, dict):
+            return payload
+        LOGGER.info("WorkOS Users API returned non-object JSON")
+        return None
+    if response.status_code == 401:
+        LOGGER.warning(
+            "WorkOS Users API returned HTTP 401 — WORKOS_API_KEY was rejected. "
+            "Copy the secret from WorkOS Dashboard → Developer → API Keys "
+            "(same environment as AuthKit)"
+        )
+        return None
+    LOGGER.info("WorkOS Users API GET /users/%s returned HTTP %s", user_id, response.status_code)
     return None
 
 
@@ -202,12 +267,16 @@ class WorkOSTokenVerifier:
         issuer: str,
         audiences: frozenset[str],
         allowed_emails: frozenset[str],
+        allowed_subs: frozenset[str] = frozenset(),
+        workos_api_key: str = "",
     ) -> None:
         self.issuer = issuer
         self.audiences = audiences
         self.allowed_emails = allowed_emails
+        self.allowed_subs = allowed_subs
+        self.workos_api_key = workos_api_key
         self._jwks_client = None
-        # sub -> (email, unix exp). Avoids userinfo on every MCP call.
+        # sub -> (email, unix exp). Avoids userinfo/Users API on every MCP call.
         self._email_by_subject: dict[str, tuple[str, int]] = {}
 
     def _claims_for_token(self, token: str) -> dict[str, Any] | None:
@@ -252,8 +321,11 @@ class WorkOSTokenVerifier:
         if email:
             return email
 
-        keys = claim_keys(claims)
-        LOGGER.info("MCP OAuth access token has no email claim; keys=%s", keys)
+        LOGGER.info(
+            "MCP OAuth access token has no email claim; keys=%s scope=%r",
+            claim_keys(claims),
+            scope_claim_text(claims),
+        )
         subject = claims.get("sub")
         subject_key = str(subject) if subject is not None else None
         cached = self._cached_email(subject_key)
@@ -261,13 +333,40 @@ class WorkOSTokenVerifier:
             return cached
 
         userinfo = await fetch_authkit_userinfo(self.issuer, token)
-        if not userinfo:
-            return None
-        LOGGER.info("AuthKit userinfo keys=%s", claim_keys(userinfo))
-        email = email_from_claims(userinfo)
+        if userinfo:
+            LOGGER.info("AuthKit userinfo keys=%s", claim_keys(userinfo))
+            email = email_from_claims(userinfo)
+            if email:
+                LOGGER.info("Resolved MCP OAuth email from AuthKit userinfo")
+                self._remember_email(subject_key, email, claims.get("exp"))
+                return email
+
+        if self.workos_api_key and subject_key:
+            profile = await fetch_workos_user_by_id(subject_key, self.workos_api_key)
+            if profile:
+                LOGGER.info("WorkOS Users API keys=%s", claim_keys(profile))
+                email = email_from_claims(profile)
+                if email:
+                    LOGGER.info("Resolved MCP OAuth email from WorkOS Users API")
+                    self._remember_email(subject_key, email, claims.get("exp"))
+                    return email
+        return None
+
+    def _log_unresolved_identity(self, email: str | None, subject: str | None) -> None:
         if email:
-            self._remember_email(subject_key, email, claims.get("exp"))
-        return email
+            LOGGER.warning("Rejected MCP OAuth token for email %r", email)
+            return
+        if not self.workos_api_key:
+            LOGGER.warning(
+                "Rejected MCP OAuth token for email None (sub=%s). "
+                "WORKOS_API_KEY is unset; Connect MCP resource tokens often "
+                "cannot call AuthKit userinfo. Set WORKOS_API_KEY from WorkOS "
+                "Dashboard → Developer → API Keys, or MCP_OAUTH_ALLOWED_SUB "
+                "to that WorkOS user id",
+                subject,
+            )
+            return
+        LOGGER.warning("Rejected MCP OAuth token for email None (sub=%s)", subject)
 
     async def verify_token(self, token: str) -> AccessToken | None:
         claims = self._claims_for_token(token)
@@ -284,19 +383,19 @@ class WorkOSTokenVerifier:
             return None
 
         email = await self._email_for_token(token, claims)
-        if not email or email not in self.allowed_emails:
-            LOGGER.warning("Rejected MCP OAuth token for email %r", email)
-            return None
-        if "email" not in claims:
-            claims = {**claims, "email": email}
-
-        raw_scope = claims.get("scope") or claims.get("scp") or ""
-        if isinstance(raw_scope, str):
-            scopes = [part for part in raw_scope.split() if part]
-        elif isinstance(raw_scope, list):
-            scopes = [str(part) for part in raw_scope if part]
+        subject = claims.get("sub")
+        subject_key = str(subject) if subject is not None else None
+        if email and email in self.allowed_emails:
+            if "email" not in claims:
+                claims = {**claims, "email": email}
+        elif not email and subject_key and subject_key in self.allowed_subs:
+            LOGGER.info("Accepted MCP OAuth token via WorkOS sub allowlist")
         else:
-            scopes = []
+            self._log_unresolved_identity(email, subject_key)
+            return None
+
+        raw_scope = scope_claim_text(claims)
+        scopes = [part for part in raw_scope.split() if part]
 
         client_id = str(claims.get("azp") or claims.get("client_id") or "workos")
         subject = claims.get("sub")
@@ -435,6 +534,8 @@ class OAuthAuthProvider(AuthProvider):
                 issuer=issuer,
                 audiences=config.oauth_allowed_audiences(),
                 allowed_emails=config.oauth_allowed_emails(),
+                allowed_subs=config.oauth_allowed_subs(),
+                workos_api_key=config.WORKOS_API_KEY,
             ),
             "auth": AuthSettings(
                 issuer_url=AnyHttpUrl(issuer),

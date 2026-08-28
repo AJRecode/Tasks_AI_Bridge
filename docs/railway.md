@@ -62,6 +62,8 @@ Set in the Railway dashboard (Settings → Variables):
 | `MCP_API_TOKEN` | **Yes when `static`** | Required whenever `MCP_AUTH_MODE=static`. Unused in `oauth` mode |
 | `WORKOS_AUTHKIT_DOMAIN` | **Yes when `oauth`** | AuthKit origin, e.g. `https://fine-ash-09-staging.authkit.app` |
 | `MCP_OAUTH_ALLOWED_EMAIL` | **Yes when `oauth`** | Comma-separated emails allowed to call `/mcp` (use the Gmail that signs into AuthKit) |
+| `WORKOS_API_KEY` | **Recommended when `oauth`** | WorkOS secret key. Connect MCP resource tokens usually 401 at AuthKit `/oauth2/userinfo`; the bridge then `GET https://api.workos.com/user_management/users/{sub}` to resolve email for the allowlist |
+| `MCP_OAUTH_ALLOWED_SUB` | Optional | Comma-separated WorkOS user ids (`user_…`, JWT `sub`). Fallback only if email cannot be resolved. Prefer email + `WORKOS_API_KEY` |
 | `MCP_OAUTH_EXTRA_AUDIENCES` | Optional | Extra JWT `aud` values if ChatGPT omits `resource` |
 | `GOOGLE_CLIENT_ID` | Yes | From OAuth client |
 | `GOOGLE_CLIENT_SECRET` | Yes | From OAuth client |
@@ -152,14 +154,41 @@ After this code is deployed, switch the Railway service from `static` to `oauth`
    - `MCP_AUTH_MODE=oauth`
    - `WORKOS_AUTHKIT_DOMAIN=https://fine-ash-09-staging.authkit.app`
    - `MCP_OAUTH_ALLOWED_EMAIL=` the **Gmail** you use to sign into WorkOS/AuthKit (comma-separate later if you add another WorkOS user)
+   - `WORKOS_API_KEY=` WorkOS **secret** key (Dashboard → **Developer → API Keys**, same environment as AuthKit). Required in practice so 1.8.2 can resolve `weinrich15@gmail.com` from JWT `sub` when userinfo 401s
+   - Optional: `MCP_OAUTH_ALLOWED_SUB=` the WorkOS user id (`user_…`) from Dashboard → **Users** if you cannot set an API key
    - Keep `GOOGLE_*` so tools can reach Tasks
    - You may leave `MCP_API_TOKEN` set; oauth mode ignores it
 3. Redeploy. Logs should show `Auth mode: oauth`.
 4. `GET /health` still 200 with no token. `POST /mcp` without a token should 401 with `WWW-Authenticate` containing `resource_metadata=`.
 5. ChatGPT also fetches `/.well-known/oauth-authorization-server/mcp` on the **MCP host** (not only AuthKit). A 404 there produces “Something went wrong with setting up the connection” / Reconnect with **No app actions**.
-6. WorkOS **Connect access tokens do not include `email`**. The bridge resolves identity via AuthKit `POST /oauth2/userinfo` and still allowlists `MCP_OAUTH_ALLOWED_EMAIL`. Logs of `Rejected MCP OAuth token for email None` mean 1.8.0-era verification; **1.8.1** fixes that.
+6. WorkOS **Connect MCP access tokens do not include `email`**, and they typically **cannot call AuthKit `/oauth2/userinfo`** (401). That endpoint is for OIDC tokens with `openid`/`email` whose audience is AuthKit, not the MCP resource URL. **1.8.2** tries OIDC `GET /oauth2/userinfo` with `Authorization: Bearer`, then WorkOS Users API by `sub`, and still allowlists `MCP_OAUTH_ALLOWED_EMAIL`. Logs of `Rejected MCP OAuth token for email None` without a Users API lookup mean `WORKOS_API_KEY` is missing.
 7. Plugin URL must be exactly `https://tasksaibridge-production.up.railway.app/mcp` (`tasksaibridge` with **ai**). `https://tasksbridge-production.up.railway.app` is a different Railway hostname and returns `Application not found`.
-8. In ChatGPT, **Reconnect** or create **New Bridges** (leave the **AJ Task MCP** tunnel plugin): authentication **OAuth**. Complete AuthKit login as that Gmail if ChatGPT shows AuthKit; a reused token can succeed without a new login once 1.8.1 is live.
+8. In ChatGPT, **Reconnect** (or create **New Bridges**) after 1.8.2 is live — leave the **AJ Task MCP** tunnel plugin. Authentication **OAuth**. Complete AuthKit login as that Gmail. A **fresh Reconnect** is required if you want ChatGPT to request `openid`/`email` from the PRM `scopes_supported` list; a reused token will not gain those scopes.
+
+### WorkOS dashboard (identity)
+
+Connect MCP tokens are minted for the MCP **resource indicator**. WorkOS MCP docs identify the caller with JWT **`sub`** (`user_…`), not email. Email allowlisting therefore needs either Users API lookup or a custom JWT claim.
+
+**Required for email allowlist (this bridge):**
+
+1. WorkOS Dashboard → **Developer → API Keys**
+2. Copy the **Secret** key for the same environment as `fine-ash-09-staging.authkit.app`
+3. Railway → Variables → set `WORKOS_API_KEY` (sealed) and keep `MCP_OAUTH_ALLOWED_EMAIL=weinrich15@gmail.com`
+4. Redeploy Railway
+
+**Optional — JWT email claim** (may only affect User Management session tokens, not Connect MCP access tokens):
+
+1. WorkOS Dashboard → **Authentication → Features → JWT Template**
+2. Add `"email": {{ user.email }}` (do not overwrite reserved keys `iss` / `sub` / `exp` / `iat` / `nbf` / `jti`)
+3. Save. Then **fresh ChatGPT Reconnect** so a new access token is minted
+
+**Optional — sub allowlist** if you cannot put an API key on Railway:
+
+1. WorkOS Dashboard → **Users** → open the Google user `weinrich15@gmail.com`
+2. Copy the user id (`user_01…`)
+3. Railway → `MCP_OAUTH_ALLOWED_SUB=` that id (keep the email allowlist set)
+
+There is no Connect toggle that “adds email to MCP access tokens” or “makes resource tokens valid at userinfo.” Scopes `openid` / `email` put email on the **ID token**; ChatGPT presents the **access token** to `/mcp`.
 
 Until that handshake succeeds, keep using the tunnel plugin.
 
@@ -202,7 +231,7 @@ Both modes share the same Python modules (`mcp_server.py`, `bridge/`, `services/
 - [ ] Rotate any secrets that were ever pasted into chat or committed by mistake
 - [ ] Railway variables hold Google OAuth secrets (not in repo)
 - [ ] `MCP_API_TOKEN` is set whenever `MCP_AUTH_MODE=static`
-- [ ] For ChatGPT → Railway: `MCP_AUTH_MODE=oauth`, `WORKOS_AUTHKIT_DOMAIN`, and `MCP_OAUTH_ALLOWED_EMAIL` are set
+- [ ] For ChatGPT → Railway: `MCP_AUTH_MODE=oauth`, `WORKOS_AUTHKIT_DOMAIN`, `MCP_OAUTH_ALLOWED_EMAIL`, and `WORKOS_API_KEY` are set
 - [ ] ChatGPT uses the **tunnel** plugin until the Railway OAuth handshake succeeds
 - [ ] Google OAuth secrets are sealed or excluded from PR preview environments
 - [ ] OAuth client belongs to **your** Google Cloud project — see [google-oauth.md](google-oauth.md)

@@ -11,7 +11,11 @@ from bridge.auth.oauth import (
     audience_values,
     claim_keys,
     email_from_claims,
+    fetch_authkit_userinfo,
+    fetch_workos_user_by_id,
+    is_workos_user_id,
     protected_resource_payload,
+    scope_claim_text,
 )
 
 ISSUER = "https://fine-ash-09-staging.authkit.app"
@@ -39,6 +43,12 @@ def test_email_from_claims_variants():
     )
     assert email_from_claims({}) is None
     assert claim_keys({"sub": "user_1", "org_id": "org_1"}) == ["org_id", "sub"]
+    assert scope_claim_text({"scope": "openid email"}) == "openid email"
+    assert scope_claim_text({"scp": ["openid", "email"]}) == "openid email"
+    assert scope_claim_text({}) == ""
+    assert is_workos_user_id("user_01JQ0E27VT3MH79RY0FVA4QBP9")
+    assert not is_workos_user_id("user_01/../escape")
+    assert not is_workos_user_id("client_01ABC")
 
 
 def test_protected_resource_payload_matches_authkit_issuer():
@@ -207,3 +217,208 @@ def test_verify_token_skips_userinfo_when_email_in_jwt(monkeypatch):
     access = asyncio.run(verifier.verify_token("fake-token"))
     assert access is not None
     assert access.claims["email"] == ALLOWED
+
+
+class _FakeHTTPResponse:
+    def __init__(self, status_code: int, payload=None):
+        self.status_code = status_code
+        self._payload = payload if payload is not None else {}
+
+    def json(self):
+        return self._payload
+
+
+class _FakeAsyncClient:
+    def __init__(self, handler):
+        self._handler = handler
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_exc):
+        return False
+
+    async def request(self, method, url, headers=None):
+        return self._handler("request", method, url, headers)
+
+    async def get(self, url, headers=None):
+        return self._handler("get", "GET", url, headers)
+
+
+def _patch_httpx(monkeypatch, handler):
+    monkeypatch.setattr(
+        "bridge.auth.oauth.httpx.AsyncClient",
+        lambda **_kwargs: _FakeAsyncClient(handler),
+    )
+
+
+def test_userinfo_uses_get_then_post_with_bearer(monkeypatch):
+    calls = []
+
+    def handler(kind, method, url, headers):
+        calls.append((kind, method, url, headers.get("Authorization")))
+        if method == "GET":
+            return _FakeHTTPResponse(401)
+        return _FakeHTTPResponse(200, {"email": "owner@example.com"})
+
+    _patch_httpx(monkeypatch, handler)
+    payload = asyncio.run(fetch_authkit_userinfo(ISSUER, "access-token"))
+    assert payload == {"email": "owner@example.com"}
+    assert [item[1] for item in calls] == ["GET", "POST"]
+    assert all(item[3] == "Bearer access-token" for item in calls)
+    assert all(item[2].endswith("/oauth2/userinfo") for item in calls)
+
+
+def test_userinfo_get_success_skips_post(monkeypatch):
+    calls = []
+
+    def handler(_kind, method, url, headers):
+        calls.append(method)
+        return _FakeHTTPResponse(200, {"email": "owner@example.com"})
+
+    _patch_httpx(monkeypatch, handler)
+    payload = asyncio.run(fetch_authkit_userinfo(ISSUER, "access-token"))
+    assert payload["email"] == "owner@example.com"
+    assert calls == ["GET"]
+
+
+def test_userinfo_both_401_returns_none(monkeypatch):
+    def handler(_kind, _method, _url, _headers):
+        return _FakeHTTPResponse(401, {"error": "invalid_token"})
+
+    _patch_httpx(monkeypatch, handler)
+    assert asyncio.run(fetch_authkit_userinfo(ISSUER, "access-token")) is None
+
+
+def test_workos_users_api_returns_email(monkeypatch):
+    def handler(kind, method, url, headers):
+        assert kind == "get"
+        assert method == "GET"
+        assert url.endswith("/user_management/users/user_01JQ0E27VT3MH79RY0FVA4QBP9")
+        assert headers["Authorization"] == "Bearer sk_test"
+        return _FakeHTTPResponse(
+            200,
+            {
+                "object": "user",
+                "id": "user_01JQ0E27VT3MH79RY0FVA4QBP9",
+                "email": "Owner@example.com",
+            },
+        )
+
+    _patch_httpx(monkeypatch, handler)
+    profile = asyncio.run(
+        fetch_workos_user_by_id("user_01JQ0E27VT3MH79RY0FVA4QBP9", "sk_test")
+    )
+    assert profile["email"] == "Owner@example.com"
+
+
+def test_workos_users_api_skips_unsafe_id(monkeypatch):
+    def handler(*_args):
+        raise AssertionError("Users API must not run for unsafe ids")
+
+    _patch_httpx(monkeypatch, handler)
+    assert asyncio.run(fetch_workos_user_by_id("user_01/../x", "sk_test")) is None
+    assert asyncio.run(fetch_workos_user_by_id("user_01ABC", "")) is None
+
+
+def test_verify_token_resolves_email_from_workos_users_api(monkeypatch):
+    verifier = WorkOSTokenVerifier(
+        issuer=ISSUER,
+        audiences=frozenset({RESOURCE}),
+        allowed_emails=frozenset({ALLOWED}),
+        workos_api_key="sk_test",
+    )
+    monkeypatch.setattr(verifier, "_claims_for_token", lambda _token: _workos_connect_claims())
+
+    async def fake_userinfo(_issuer: str, _token: str):
+        return None
+
+    async def fake_user(user_id: str, api_key: str):
+        assert user_id == "user_01JQ0E27VT3MH79RY0FVA4QBP9"
+        assert api_key == "sk_test"
+        return {"id": user_id, "email": "Owner@example.com"}
+
+    monkeypatch.setattr("bridge.auth.oauth.fetch_authkit_userinfo", fake_userinfo)
+    monkeypatch.setattr("bridge.auth.oauth.fetch_workos_user_by_id", fake_user)
+    access = asyncio.run(verifier.verify_token("fake-token"))
+    assert access is not None
+    assert access.claims["email"] == ALLOWED
+
+
+def test_verify_token_users_api_cached_by_subject(monkeypatch):
+    verifier = WorkOSTokenVerifier(
+        issuer=ISSUER,
+        audiences=frozenset({RESOURCE}),
+        allowed_emails=frozenset({ALLOWED}),
+        workos_api_key="sk_test",
+    )
+    monkeypatch.setattr(verifier, "_claims_for_token", lambda _token: _workos_connect_claims())
+    calls = {"n": 0}
+
+    async def fake_userinfo(_issuer: str, _token: str):
+        return None
+
+    async def fake_user(_user_id: str, _api_key: str):
+        calls["n"] += 1
+        return {"email": ALLOWED}
+
+    monkeypatch.setattr("bridge.auth.oauth.fetch_authkit_userinfo", fake_userinfo)
+    monkeypatch.setattr("bridge.auth.oauth.fetch_workos_user_by_id", fake_user)
+    assert asyncio.run(verifier.verify_token("token-a")) is not None
+    assert asyncio.run(verifier.verify_token("token-b")) is not None
+    assert calls["n"] == 1
+
+
+def test_verify_token_users_api_unknown_email_rejected(monkeypatch):
+    verifier = WorkOSTokenVerifier(
+        issuer=ISSUER,
+        audiences=frozenset({RESOURCE}),
+        allowed_emails=frozenset({ALLOWED}),
+        workos_api_key="sk_test",
+    )
+    monkeypatch.setattr(verifier, "_claims_for_token", lambda _token: _workos_connect_claims())
+
+    async def fake_userinfo(_issuer: str, _token: str):
+        return None
+
+    async def fake_user(_user_id: str, _api_key: str):
+        return {"email": "stranger@example.com"}
+
+    monkeypatch.setattr("bridge.auth.oauth.fetch_authkit_userinfo", fake_userinfo)
+    monkeypatch.setattr("bridge.auth.oauth.fetch_workos_user_by_id", fake_user)
+    assert asyncio.run(verifier.verify_token("fake-token")) is None
+
+
+def test_verify_token_accepts_allowed_sub_when_email_missing(monkeypatch):
+    subject = "user_01JQ0E27VT3MH79RY0FVA4QBP9"
+    verifier = WorkOSTokenVerifier(
+        issuer=ISSUER,
+        audiences=frozenset({RESOURCE}),
+        allowed_emails=frozenset({ALLOWED}),
+        allowed_subs=frozenset({subject}),
+    )
+    monkeypatch.setattr(verifier, "_claims_for_token", lambda _token: _workos_connect_claims())
+
+    async def fake_userinfo(_issuer: str, _token: str):
+        return None
+
+    monkeypatch.setattr("bridge.auth.oauth.fetch_authkit_userinfo", fake_userinfo)
+    access = asyncio.run(verifier.verify_token("fake-token"))
+    assert access is not None
+    assert access.subject == subject
+
+
+def test_verify_token_unknown_sub_rejected_without_email(monkeypatch):
+    verifier = WorkOSTokenVerifier(
+        issuer=ISSUER,
+        audiences=frozenset({RESOURCE}),
+        allowed_emails=frozenset({ALLOWED}),
+        allowed_subs=frozenset({"user_OTHER"}),
+    )
+    monkeypatch.setattr(verifier, "_claims_for_token", lambda _token: _workos_connect_claims())
+
+    async def fake_userinfo(_issuer: str, _token: str):
+        return None
+
+    monkeypatch.setattr("bridge.auth.oauth.fetch_authkit_userinfo", fake_userinfo)
+    assert asyncio.run(verifier.verify_token("fake-token")) is None

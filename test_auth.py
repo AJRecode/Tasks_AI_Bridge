@@ -19,7 +19,9 @@ def _reload_config(monkeypatch, **env: str | None):
         "MCP_AUTH_MODE",
         "MCP_API_TOKEN",
         "WORKOS_AUTHKIT_DOMAIN",
+        "WORKOS_API_KEY",
         "MCP_OAUTH_ALLOWED_EMAIL",
+        "MCP_OAUTH_ALLOWED_SUB",
         "MCP_OAUTH_EXTRA_AUDIENCES",
         "MCP_PUBLIC_HOST",
         "RAILWAY_ENVIRONMENT",
@@ -158,6 +160,8 @@ def test_oauth_validate_deployment_ok(monkeypatch):
         MCP_AUTH_MODE="oauth",
         WORKOS_AUTHKIT_DOMAIN="fine-ash-09-staging.authkit.app",
         MCP_OAUTH_ALLOWED_EMAIL="user@example.com",
+        MCP_OAUTH_ALLOWED_SUB="user_01ABC",
+        WORKOS_API_KEY="sk_test_not_real",
         MCP_PUBLIC_HOST="tasksaibridge-production.up.railway.app",
     )
     provider = OAuthAuthProvider()
@@ -165,6 +169,9 @@ def test_oauth_validate_deployment_ok(monkeypatch):
     kwargs = provider.fastmcp_kwargs()
     assert "token_verifier" in kwargs
     assert kwargs["auth"].resource_server_url is not None
+    verifier = kwargs["token_verifier"]
+    assert verifier.workos_api_key == "sk_test_not_real"
+    assert "user_01ABC" in verifier.allowed_subs
 
 
 def test_preview_environment_blocks_google_secrets(monkeypatch):

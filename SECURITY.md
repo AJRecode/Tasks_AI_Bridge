@@ -23,7 +23,7 @@ Use `.env.example` and `credentials.json.example` as templates only.
 
 - Store `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REFRESH_TOKEN` as Railway **variables**, not in the repo.
 - Store `MCP_API_TOKEN` as a Railway variable when `MCP_AUTH_MODE=static`.
-- For `MCP_AUTH_MODE=oauth`, store `WORKOS_AUTHKIT_DOMAIN` and `MCP_OAUTH_ALLOWED_EMAIL` (the AuthKit login emails allowed to call `/mcp`). Do not expose Google refresh tokens to ChatGPT.
+- For `MCP_AUTH_MODE=oauth`, store `WORKOS_AUTHKIT_DOMAIN` and `MCP_OAUTH_ALLOWED_EMAIL` (the AuthKit login emails allowed to call `/mcp`). Store `WORKOS_API_KEY` (WorkOS Dashboard → Developer → API Keys) so the bridge can resolve email from JWT `sub` when AuthKit userinfo returns 401. Optional: `MCP_OAUTH_ALLOWED_SUB` for WorkOS user ids if email cannot be obtained. Do not expose Google refresh tokens to ChatGPT.
 - Prefer **sealed** Railway variables for Google OAuth secrets so PR preview environments do not inherit them.
 - The server runs headless — no browser OAuth on the container.
 - Task titles and notes pass through MCP responses; treat logs as potentially sensitive.

@@ -14,7 +14,9 @@ def _reload_config(**env):
         "HOST",
         "PORT",
         "WORKOS_AUTHKIT_DOMAIN",
+        "WORKOS_API_KEY",
         "MCP_OAUTH_ALLOWED_EMAIL",
+        "MCP_OAUTH_ALLOWED_SUB",
         "MCP_OAUTH_EXTRA_AUDIENCES",
     ):
         if key not in env:
@@ -51,6 +53,7 @@ def test_authkit_issuer_and_oauth_allowlists():
     cfg = _reload_config(
         WORKOS_AUTHKIT_DOMAIN="fine-ash-09-staging.authkit.app",
         MCP_OAUTH_ALLOWED_EMAIL="A@Example.com, other@example.com",
+        MCP_OAUTH_ALLOWED_SUB="user_01ABC, user_01DEF",
         MCP_PUBLIC_HOST="tasksaibridge-production.up.railway.app",
         MCP_OAUTH_EXTRA_AUDIENCES="client_extra",
     )
@@ -58,6 +61,7 @@ def test_authkit_issuer_and_oauth_allowlists():
     assert cfg.oauth_allowed_emails() == frozenset(
         {"a@example.com", "other@example.com"}
     )
+    assert cfg.oauth_allowed_subs() == frozenset({"user_01ABC", "user_01DEF"})
     assert "https://tasksaibridge-production.up.railway.app/mcp" in cfg.oauth_allowed_audiences()
     assert "client_extra" in cfg.oauth_allowed_audiences()
 
