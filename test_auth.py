@@ -9,6 +9,7 @@ import pytest
 
 import bridge.config as config
 from bridge.auth.factory import create_auth_provider, resolve_auth_mode, validate_deployment
+from bridge.auth.oauth import OAuthAuthProvider
 from bridge.auth.static_bearer import StaticBearerAuthProvider
 
 
@@ -17,7 +18,12 @@ def _reload_config(monkeypatch, **env: str | None):
         "TASKS_BRIDGE_DEPLOYMENT",
         "MCP_AUTH_MODE",
         "MCP_API_TOKEN",
+        "WORKOS_AUTHKIT_DOMAIN",
+        "MCP_OAUTH_ALLOWED_EMAIL",
+        "MCP_OAUTH_EXTRA_AUDIENCES",
+        "MCP_PUBLIC_HOST",
         "RAILWAY_ENVIRONMENT",
+        "RAILWAY_PUBLIC_DOMAIN",
         "TASKS_BRIDGE_PRODUCTION_ENV",
         "GOOGLE_CLIENT_ID",
         "GOOGLE_CLIENT_SECRET",
@@ -115,11 +121,50 @@ def test_production_default_cannot_boot_without_token(monkeypatch):
         validate_deployment(provider)
 
 
-def test_oauth_mode_not_implemented(monkeypatch):
+def test_oauth_requires_authkit_domain_and_email(monkeypatch):
     _reload_config(monkeypatch, MCP_AUTH_MODE="oauth")
     provider = create_auth_provider("oauth")
-    with pytest.raises(RuntimeError, match="not implemented"):
+    with pytest.raises(RuntimeError, match="WORKOS_AUTHKIT_DOMAIN"):
         provider.validate_deployment()
+
+    _reload_config(
+        monkeypatch,
+        MCP_AUTH_MODE="oauth",
+        WORKOS_AUTHKIT_DOMAIN="https://fine-ash-09-staging.authkit.app",
+    )
+    provider = OAuthAuthProvider()
+    with pytest.raises(RuntimeError, match="MCP_OAUTH_ALLOWED_EMAIL"):
+        provider.validate_deployment()
+
+
+def test_oauth_requires_public_resource_url(monkeypatch):
+    _reload_config(
+        monkeypatch,
+        MCP_AUTH_MODE="oauth",
+        WORKOS_AUTHKIT_DOMAIN="https://fine-ash-09-staging.authkit.app",
+        MCP_OAUTH_ALLOWED_EMAIL="user@example.com",
+        MCP_PUBLIC_HOST=None,
+        RAILWAY_PUBLIC_DOMAIN=None,
+        TASKS_BRIDGE_DEPLOYMENT="local",
+    )
+    provider = OAuthAuthProvider()
+    with pytest.raises(RuntimeError, match="MCP_PUBLIC_HOST"):
+        provider.validate_deployment()
+
+
+def test_oauth_validate_deployment_ok(monkeypatch):
+    _reload_config(
+        monkeypatch,
+        MCP_AUTH_MODE="oauth",
+        WORKOS_AUTHKIT_DOMAIN="fine-ash-09-staging.authkit.app",
+        MCP_OAUTH_ALLOWED_EMAIL="user@example.com",
+        MCP_PUBLIC_HOST="tasksaibridge-production.up.railway.app",
+    )
+    provider = OAuthAuthProvider()
+    provider.validate_deployment()
+    kwargs = provider.fastmcp_kwargs()
+    assert "token_verifier" in kwargs
+    assert kwargs["auth"].resource_server_url is not None
 
 
 def test_preview_environment_blocks_google_secrets(monkeypatch):

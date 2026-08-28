@@ -13,6 +13,9 @@ def _reload_config(**env):
         "MCP_PUBLIC_HOST",
         "HOST",
         "PORT",
+        "WORKOS_AUTHKIT_DOMAIN",
+        "MCP_OAUTH_ALLOWED_EMAIL",
+        "MCP_OAUTH_EXTRA_AUDIENCES",
     ):
         if key not in env:
             os.environ.pop(key, None)
@@ -44,9 +47,25 @@ def test_public_host_override():
     assert cfg.PUBLIC_HOST == "example.com"
 
 
+def test_authkit_issuer_and_oauth_allowlists():
+    cfg = _reload_config(
+        WORKOS_AUTHKIT_DOMAIN="fine-ash-09-staging.authkit.app",
+        MCP_OAUTH_ALLOWED_EMAIL="A@Example.com, other@example.com",
+        MCP_PUBLIC_HOST="tasksaibridge-production.up.railway.app",
+        MCP_OAUTH_EXTRA_AUDIENCES="client_extra",
+    )
+    assert cfg.authkit_issuer_url() == "https://fine-ash-09-staging.authkit.app"
+    assert cfg.oauth_allowed_emails() == frozenset(
+        {"a@example.com", "other@example.com"}
+    )
+    assert "https://tasksaibridge-production.up.railway.app/mcp" in cfg.oauth_allowed_audiences()
+    assert "client_extra" in cfg.oauth_allowed_audiences()
+
+
 if __name__ == "__main__":
     test_default_deployment_is_local()
     test_production_deployment_from_railway()
     test_public_host_override()
+    test_authkit_issuer_and_oauth_allowlists()
     _reload_config()
     print("All config tests passed.")

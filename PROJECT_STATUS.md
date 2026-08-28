@@ -1,10 +1,10 @@
 # Project Status
 
-* **Last updated:** August 3, 2026 17:05 ET (macOS menu bar app)
-* **Server version:** `1.6.4` (`bridge/diagnostics/`)
+* **Last updated:** August 28, 2026 10:30 ET (WorkOS MCP OAuth resource server)
+* **Server version:** `1.7.0` (`bridge/diagnostics/`)
 * **License:** MIT
 * **Deployment modes:** `local` (default) | `production` (Railway via env)
-* **Inbound auth modes:** `none` (local) | `static` (Railway bearer) | `oauth` (exploratory stub)
+* **Inbound auth modes:** `none` (local) | `static` (Railway bearer) | `oauth` (WorkOS/AuthKit resource server)
 
 ## Summary
 
@@ -26,7 +26,8 @@ Dev      →  MCP Inspector → http://127.0.0.1:8000/mcp
 ### Production (Railway)
 
 ```
-GitHub  →  Railway  →  https://<app>.up.railway.app/mcp  →  curl / Inspector / custom clients (Bearer)
+ChatGPT (after oauth handshake) → https://<app>.up.railway.app/mcp  (WorkOS JWT)
+curl / Inspector                → same URL with static bearer (MCP_AUTH_MODE=static)
                               ↓
                     google_auth (env vars)  →  Google Tasks API
 ```
@@ -34,7 +35,8 @@ GitHub  →  Railway  →  https://<app>.up.railway.app/mcp  →  curl / Inspect
 | Mode | Entry | Google auth | Inbound MCP auth | ChatGPT path |
 |---|---|---|---|---|
 | Local | `python mcp_server.py` / `start_tasks_bridge.sh` | `credentials.json` + `token.json` | `none` (default) | `tunnel-client` → localhost |
-| Production | Docker / Railway | `GOOGLE_*` env vars | `static` bearer (default) | **Exploratory** — tunnel today; Railway HTTPS only if IdP spike succeeds |
+| Production `static` | Docker / Railway | `GOOGLE_*` env vars | `MCP_API_TOKEN` bearer | Not ChatGPT — use tunnel |
+| Production `oauth` | Docker / Railway | `GOOGLE_*` env vars | WorkOS JWT + email allowlist | New ChatGPT plugin, **OAuth** |
 
 ## MCP tools (10)
 
@@ -50,17 +52,20 @@ GitHub  →  Railway  →  https://<app>.up.railway.app/mcp  →  curl / Inspect
 | Auth mode resolution | `pytest test_auth.py` |
 | Static bearer ASGI | `pytest test_static_bearer.py` |
 | HTTP auth integration | `pytest test_http_integration.py` |
+| WorkOS oauth verifier + 401 metadata | `pytest test_oauth.py test_http_integration.py` (this session) |
 | Task tools (mocked Google API) | `pytest test_task_tools_mocked.py` |
 | Diagnostics | `python test_bridge_diagnostics.py` or `pytest test_bridge_diagnostics.py` |
 | Google Tasks API (local) | `python test_task_services.py "General"` (requires OAuth files) |
 | MCP HTTP + `/health` | `curl http://127.0.0.1:8000/health` |
 | Local orchestration | `./start_tasks_bridge.sh --status` (tunnel idle = UP, not STALE) |
 | macOS menu bar app | `./scripts/build-menubar-app.sh` → [docs/macos-menubar.md](docs/macos-menubar.md) |
-| Railway artifacts | `Dockerfile`, `railway.toml`, `/health` route |
+| Railway `/health` | `https://tasksaibridge-production.up.railway.app/health` (static, 2026-08-28) |
 | GitHub CI | `.github/workflows/ci.yml` — pytest, pip-audit, bandit on push/PR |
-| Inbound auth | `bridge/auth/` — `static` requires `MCP_API_TOKEN` (local + prod); 401 + `WWW-Authenticate` |
+| Inbound auth | `bridge/auth/` — `static` requires `MCP_API_TOKEN`; `oauth` requires WorkOS env vars |
 | HTTP hardening | `bridge/transport/` — per-process rate limits (proxy-sensitive), size limits |
 | Dependabot | `.github/dependabot.yml` — weekly pip, Docker, Actions updates |
+
+ChatGPT → Railway OAuth handshake is **not** verified until a new ChatGPT plugin completes AuthKit login against the oauth deploy.
 
 ## Runtime status
 
@@ -68,17 +73,16 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 ## Known issues
 
-* **ChatGPT tool discovery lag** — new MCP tools may appear in Inspector before ChatGPT exposes them. Likely OpenAI registry propagation, not a stale server. See [docs/chatgpt-discovery.md](docs/chatgpt-discovery.md).
-* **`oauth_metadata` warnings** — expected until an OAuth path is chosen (tunnel works today).
-* **`MCP_AUTH_MODE=oauth`** — fails fast; direction is exploratory ([docs/mcp-oauth-design.md](docs/mcp-oauth-design.md)).
+* **ChatGPT tool discovery lag** — new MCP tools may appear in Inspector before ChatGPT exposes them. See [docs/chatgpt-discovery.md](docs/chatgpt-discovery.md).
+* **ChatGPT plugin UI** — OAuth / No auth / Mixed only (no bearer Token). Direct Railway ChatGPT requires `MCP_AUTH_MODE=oauth`.
+* **WorkOS “Set as default”** on a single resource indicator may be hidden; ChatGPT should still send `resource=` the `/mcp` URL.
 * **`tools/list_changed` not enabled** — optional future enhancement.
-* **ChatGPT tunnel + `MCP_AUTH_MODE=static`** — incompatible; tunnel does not send bearer. Use `none` locally for ChatGPT; use `static` only to test Railway-style auth (Inspector, curl).
+* **ChatGPT tunnel + `MCP_AUTH_MODE=static`** — incompatible; tunnel does not send bearer. Use `none` locally for ChatGPT.
 
 ## Roadmap
 
-* [ ] First public GitHub release + Railway deploy (`MCP_AUTH_MODE=static`)
-* [ ] **Direct Railway → ChatGPT** — exploratory; time-boxed external IdP spike before any code — [docs/mcp-oauth-design.md](docs/mcp-oauth-design.md)
-* [ ] ChatGPT continues on OpenAI tunnel unless IdP + ChatGPT handshake succeeds
+* [ ] Push oauth code, set Railway `MCP_AUTH_MODE=oauth` + WorkOS vars, confirm `/mcp` 401 `resource_metadata`
+* [ ] ChatGPT **new** plugin → Railway `/mcp` with **OAuth**; tunnel plugin stays until that passes
 * [ ] Optional: `tools/list_changed` + stateful HTTP for faster ChatGPT discovery
 
 ## Key files
@@ -86,7 +90,8 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 | Path | Role |
 |---|---|
 | `mcp_server.py` | Entry point — `create_server(auth_provider)` |
-| `bridge/auth/` | Inbound auth modes |
+| `bridge/auth/` | Inbound auth: none, static, oauth |
+| `bridge/auth/oauth.py` | WorkOS JWT verifier + well-known metadata |
 | `bridge/config/` | Deployment settings |
 | `bridge/diagnostics/` | Version, schema hash |
 | `bridge/logging/` | MCP discovery logging |
@@ -95,8 +100,8 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 | `start_tasks_bridge.sh` | Local orchestration |
 | `Dockerfile` / `railway.toml` | Railway production deploy |
 | `docs/local-dev.md` | Local setup |
-| `docs/railway.md` | Railway deploy |
-| `docs/mcp-oauth-design.md` | OAuth exploration for ChatGPT + HTTPS (external IdP first) |
+| `docs/railway.md` | Railway deploy + oauth switch |
+| `docs/mcp-oauth-design.md` | OAuth design (WorkOS resource server) |
 | `docs/chatgpt-tunnel.md` | OpenAI tunnel setup |
 | `docs/chatgpt-discovery.md` | Debugging ChatGPT tool discovery |
 | `.github/workflows/ci.yml` | CI: unit tests + dependency audit + security scan |
@@ -113,8 +118,8 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 ## Recent result
 
-macOS menu bar app: `tasks_bridge_menubar.py` + `build-menubar-app.sh` (thin `.app` wrapper, no py2app); **TB** menu bar label with Start / Stop / Restart / Status; docs at `docs/macos-menubar.md`.
+`MCP_AUTH_MODE=oauth` implemented as a WorkOS/AuthKit resource server: JWT verify via JWKS, email allowlist, RFC 9728 metadata, 401 `resource_metadata`. Railway static `/health` already works. ChatGPT handshake not yet attempted.
 
 ## Next action
 
-Build and add to Login Items: `./scripts/build-menubar-app.sh` → copy to `/Applications/` → System Settings → Login Items.
+Push this code, then on Railway set `MCP_AUTH_MODE=oauth`, `WORKOS_AUTHKIT_DOMAIN`, and `MCP_OAUTH_ALLOWED_EMAIL` (AuthKit login Gmail — Railway variable only). Create a new ChatGPT plugin with OAuth; keep the tunnel plugin until it works.

@@ -41,6 +41,9 @@ _CONFIG_KEYS = (
     "PORT",
     "MCP_PATH",
     "MCP_PUBLIC_HOST",
+    "WORKOS_AUTHKIT_DOMAIN",
+    "MCP_OAUTH_ALLOWED_EMAIL",
+    "MCP_OAUTH_EXTRA_AUDIENCES",
 )
 
 _PRODUCTION_STATIC_ENV = {
@@ -185,3 +188,51 @@ def test_production_http_startup_path_auth_and_health(monkeypatch):
     payload = health.json()
     assert payload["status"] == "ok"
     assert payload["deployment"] == "production"
+
+
+_OAUTH_ENV = {
+    "TASKS_BRIDGE_DEPLOYMENT": "production",
+    "MCP_AUTH_MODE": "oauth",
+    "WORKOS_AUTHKIT_DOMAIN": "https://fine-ash-09-staging.authkit.app",
+    "MCP_OAUTH_ALLOWED_EMAIL": "owner@example.com",
+    "MCP_PUBLIC_HOST": "tasksaibridge-production.up.railway.app",
+    "MCP_API_TOKEN": None,
+}
+
+
+def test_oauth_http_unauthenticated_challenge_and_metadata(monkeypatch):
+    server, auth_provider = _bootstrap_production_http_server(monkeypatch, **_OAUTH_ENV)
+    assert auth_provider.mode == "oauth"
+    app = server.streamable_http_app()
+    assert type(app).__name__ == "ProductionSecurityASGI"
+
+    unauth = asyncio.run(
+        _request(app, "POST", "/mcp", headers=_MCP_HEADERS, json_body=_INITIALIZE_BODY)
+    )
+    assert unauth.status_code == 401
+    www = unauth.headers.get("www-authenticate", "")
+    assert "resource_metadata=" in www
+    assert "oauth-protected-resource" in www
+
+    metadata = asyncio.run(
+        _request(app, "GET", "/.well-known/oauth-protected-resource/mcp")
+    )
+    assert metadata.status_code == 200
+    body = metadata.json()
+    assert body["resource"] == "https://tasksaibridge-production.up.railway.app/mcp"
+    issuers = [str(item).rstrip("/") for item in body["authorization_servers"]]
+    assert issuers == ["https://fine-ash-09-staging.authkit.app"]
+
+    root_metadata = asyncio.run(
+        _request(app, "GET", "/.well-known/oauth-protected-resource")
+    )
+    assert root_metadata.status_code == 200
+    root_body = root_metadata.json()
+    assert root_body["resource"] == "https://tasksaibridge-production.up.railway.app/mcp"
+    assert root_body["authorization_servers"] == [
+        "https://fine-ash-09-staging.authkit.app"
+    ]
+
+    health = asyncio.run(_request(app, "GET", "/health"))
+    assert health.status_code == 200
+    assert health.json()["status"] == "ok"

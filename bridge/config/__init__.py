@@ -60,6 +60,11 @@ GOOGLE_TOKEN_JSON = os.environ.get("GOOGLE_TOKEN_JSON", "").strip()
 MCP_AUTH_MODE = os.environ.get("MCP_AUTH_MODE", "").strip()
 MCP_API_TOKEN = os.environ.get("MCP_API_TOKEN", "").strip()
 
+# MCP OAuth resource-server mode (WorkOS/AuthKit)
+WORKOS_AUTHKIT_DOMAIN = os.environ.get("WORKOS_AUTHKIT_DOMAIN", "").strip()
+MCP_OAUTH_ALLOWED_EMAIL = os.environ.get("MCP_OAUTH_ALLOWED_EMAIL", "").strip()
+MCP_OAUTH_EXTRA_AUDIENCES = os.environ.get("MCP_OAUTH_EXTRA_AUDIENCES", "").strip()
+
 # HTTP hardening
 RATE_LIMIT_REQUESTS = int(os.environ.get("MCP_RATE_LIMIT_REQUESTS", "60"))
 RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("MCP_RATE_LIMIT_WINDOW_SECONDS", "60"))
@@ -111,3 +116,35 @@ def public_mcp_url() -> str | None:
         return None
     host = PUBLIC_HOST.removeprefix("https://").removeprefix("http://").split("/")[0]
     return f"https://{host}{MCP_PATH}"
+
+
+def authkit_issuer_url() -> str | None:
+    """Return the WorkOS AuthKit issuer origin, or None if unset."""
+    raw = WORKOS_AUTHKIT_DOMAIN.strip()
+    if not raw:
+        return None
+    if not raw.startswith(("http://", "https://")):
+        raw = f"https://{raw}"
+    return raw.rstrip("/")
+
+
+def oauth_allowed_emails() -> frozenset[str]:
+    """Lowercased emails allowed to call /mcp when MCP_AUTH_MODE=oauth."""
+    return frozenset(
+        part.strip().lower()
+        for part in MCP_OAUTH_ALLOWED_EMAIL.split(",")
+        if part.strip()
+    )
+
+
+def oauth_allowed_audiences() -> frozenset[str]:
+    """Token ``aud`` values accepted in oauth mode (resource URL plus extras)."""
+    allowed: set[str] = set()
+    resource = public_mcp_url()
+    if resource:
+        allowed.add(resource)
+    for part in MCP_OAUTH_EXTRA_AUDIENCES.split(","):
+        value = part.strip()
+        if value:
+            allowed.add(value)
+    return frozenset(allowed)

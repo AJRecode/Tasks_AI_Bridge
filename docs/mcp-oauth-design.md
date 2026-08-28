@@ -1,6 +1,6 @@
 # MCP endpoint OAuth — exploration (ChatGPT + Railway)
 
-**Status:** Exploratory / not committed. No implementation yet.
+**Status:** Resource-server mode implemented (`MCP_AUTH_MODE=oauth` + WorkOS/AuthKit). ChatGPT end-to-end handshake not yet verified.
 
 This document captures **open questions** about letting ChatGPT connect to Tasks Bridge over **public HTTPS** (Railway) without static bearer tokens — which the ChatGPT connector UI does not support today.
 
@@ -71,9 +71,9 @@ Then productionize the existing OAuth seam: configuration/env vars, token valida
 |---|---|---|
 | **ChatGPT + local tunnel** | **Works now** | [chatgpt-tunnel.md](chatgpt-tunnel.md) → `localhost:8000/mcp` |
 | **Railway + static bearer** | **Works now** | `MCP_AUTH_MODE=static` — curl, scanners, Inspector, custom clients; **not** ChatGPT UI |
-| **Railway + OAuth** | **Uncertain / planned** | Requires MCP-standard OAuth; approach TBD |
+| **Railway + OAuth** | **Code in; ChatGPT handshake unverified** | WorkOS/AuthKit resource server; new ChatGPT plugin with **OAuth** |
 
-Inbound auth modes in code: `none` | `static` | `oauth` ([bridge/auth/](../bridge/auth/)). Only `none` and `static` are implemented. `oauth` fails fast until a deliberate choice is made.
+Inbound auth modes in code: `none` | `static` | `oauth` ([bridge/auth/](../bridge/auth/)). `oauth` is a WorkOS/AuthKit resource server (`token_verifier` + RFC 9728 metadata).
 
 ## Problem statement
 
@@ -186,7 +186,7 @@ Exact URLs and env vars depend on the IdP chosen — **not specified here**.
 |---|---|---|
 | `none` | Local dev (default) | No inbound auth on `/mcp` |
 | `static` | Railway / scripts | Bearer via [bridge/auth/static_bearer.py](../bridge/auth/static_bearer.py) |
-| `oauth` | ChatGPT + Railway HTTPS (TBD) | Stub in [bridge/auth/oauth.py](../bridge/auth/oauth.py) — not implemented |
+| `oauth` | ChatGPT + Railway HTTPS | WorkOS/AuthKit resource server in [bridge/auth/oauth.py](../bridge/auth/oauth.py) |
 
 Static bearer and OAuth must **not** both wrap `/mcp`.
 
@@ -214,7 +214,7 @@ Static bearer and OAuth must **not** both wrap `/mcp`.
 
 | Component | Role |
 |---|---|
-| [bridge/auth/oauth.py](../bridge/auth/oauth.py) | Future OAuth mode — IdP-backed resource server preferred |
+| [bridge/auth/oauth.py](../bridge/auth/oauth.py) | WorkOS/AuthKit resource server (`token_verifier` + RFC 9728 metadata) |
 | [bridge/auth/static_bearer.py](../bridge/auth/static_bearer.py) | Today’s Railway inbound auth |
 | [bridge/transport/http_security.py](../bridge/transport/http_security.py) | Rate/size limits only |
 | [mcp_server.py](../mcp_server.py) | `create_server(auth_provider=…)` |

@@ -21,11 +21,11 @@ If you fork or deploy this project, you need **your own** [Google Cloud OAuth cl
 |---|---|---|
 | **ChatGPT + OpenAI tunnel** | **Works now** | ChatGPT via [OpenAI Secure MCP Tunnel](docs/chatgpt-tunnel.md) → `localhost:8000/mcp` — **the current ChatGPT-compatible path** |
 | **Railway + static bearer** (`MCP_AUTH_MODE=static`) | **Works now** | MCP Inspector (Custom Header), curl, security scanners, compatible custom MCP clients — **not** ChatGPT |
-| **Railway + OAuth** (`MCP_AUTH_MODE=oauth`) | **Required for direct ChatGPT → Railway** | ChatGPT over public HTTPS — exploratory; external IdP preferred. See [mcp-oauth-design.md](docs/mcp-oauth-design.md) |
+| **Railway + OAuth** (`MCP_AUTH_MODE=oauth`) | **Code in; ChatGPT handshake unverified** | ChatGPT plugin **OAuth** → WorkOS AuthKit → Railway `/mcp`. See [mcp-oauth-design.md](docs/mcp-oauth-design.md) |
 
 **ChatGPT cannot use Railway static bearer.** The ChatGPT connector UI does not accept `MCP_API_TOKEN`. For ChatGPT today, use the **OpenAI tunnel to localhost**. Static bearer on Railway is for Inspector, curl, scanners, and other clients that can send `Authorization: Bearer …`.
 
-Inbound auth uses exactly one mode at a time: `none` (local default), `static` (production default; requires `MCP_API_TOKEN` everywhere), or `oauth` (stub). See `bridge/auth/` and [docs/railway.md](docs/railway.md).
+Inbound auth uses exactly one mode at a time: `none` (local default), `static` (production default; requires `MCP_API_TOKEN`), or `oauth` (WorkOS/AuthKit resource server). See `bridge/auth/` and [docs/railway.md](docs/railway.md).
 
 ## Quick start (local)
 
@@ -128,7 +128,7 @@ Bearer-protected HTTPS for **Inspector, curl, scanners, and compatible MCP clien
 GitHub → Railway → https://your-app.up.railway.app/mcp  (Authorization: Bearer MCP_API_TOKEN)
 ```
 
-Set `MCP_API_TOKEN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REFRESH_TOKEN` in Railway. See [docs/railway.md](docs/railway.md). For ChatGPT + Railway possibilities (uncertain), see **[docs/mcp-oauth-design.md](docs/mcp-oauth-design.md)**.
+For Railway `static` mode, set `MCP_API_TOKEN` plus `GOOGLE_*`. For ChatGPT over Railway HTTPS, use `MCP_AUTH_MODE=oauth` with WorkOS vars — see [docs/railway.md](docs/railway.md). Keep the tunnel plugin until that handshake is verified.
 
 ## Project layout
 

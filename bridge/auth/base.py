@@ -27,3 +27,6 @@ class AuthProvider(ABC):
 
     def install_http_auth(self, fastmcp: FastMCP, *, mcp_path: str) -> None:
         """Wrap the streamable HTTP app with mode-specific inbound auth, if any."""
+
+    def register_routes(self, fastmcp: FastMCP) -> None:
+        """Register extra HTTP routes (OAuth metadata compatibility)."""

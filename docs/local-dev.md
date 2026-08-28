@@ -14,7 +14,7 @@ ChatGPT       →  OpenAI tunnel ← tunnel-client ← localhost:8000/mcp
                     bridge/ + services/tasks/  →  Google Tasks API
 ```
 
-Set `MCP_AUTH_MODE=static` and `MCP_API_TOKEN` in `.env` to test bearer auth locally (required token in that mode). **Leave auth at `none` (default) if you use the ChatGPT tunnel** — `tunnel-client` does not send a bearer header.
+Set `MCP_AUTH_MODE=static` and `MCP_API_TOKEN` in `.env` to test bearer auth locally (required token in that mode). **Leave auth at `none` (default) if you use the ChatGPT tunnel** — `tunnel-client` does not send a bearer header. Do **not** set `MCP_AUTH_MODE=oauth` locally; that mode is for Railway + a ChatGPT **OAuth** plugin.
 
 ## `.env` file
 
@@ -35,7 +35,7 @@ TUNNEL_CLIENT_PROFILE=tasks-bridge
 
 | Variable | Local default | Notes |
 |---|---|---|
-| `MCP_AUTH_MODE` | `none` | `static` requires `MCP_API_TOKEN`; `oauth` is a stub |
+| `MCP_AUTH_MODE` | `none` | `static` requires `MCP_API_TOKEN`; `oauth` requires WorkOS env vars |
 | `MCP_API_TOKEN` | unset | Required when mode is `static` |
 
 Generate a token:

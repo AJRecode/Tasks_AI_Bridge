@@ -8,9 +8,9 @@ Deploy Tasks Bridge as a **bearer-protected** public HTTPS MCP endpoint when `MC
 |---|---|---|
 | **ChatGPT + OpenAI tunnel** | **Works now** | [chatgpt-tunnel.md](chatgpt-tunnel.md) → `localhost:8000/mcp`. **Current ChatGPT-compatible path.** |
 | **Railway + static bearer** | **Works now** | `MCP_AUTH_MODE=static` + `MCP_API_TOKEN`. Inspector (Custom Header), curl, scanners, compatible custom clients. **Not ChatGPT.** |
-| **Railway + OAuth** | **Required for direct ChatGPT → Railway** | Exploratory stub today — external IdP preferred. See **[mcp-oauth-design.md](mcp-oauth-design.md)**. |
+| **Railway + OAuth** | **Implemented; ChatGPT handshake unverified** | `MCP_AUTH_MODE=oauth` + WorkOS/AuthKit. ChatGPT connector **OAuth**. See **[mcp-oauth-design.md](mcp-oauth-design.md)**. |
 
-**ChatGPT cannot authenticate to Railway with static bearer.** The connector UI supports OAuth, not `MCP_API_TOKEN`. Use the OpenAI tunnel for ChatGPT; use static bearer on Railway for Inspector, curl, scanners, and compatible clients.
+**ChatGPT cannot authenticate to Railway with static bearer.** The ChatGPT plugin UI offers OAuth / No auth / Mixed, not `MCP_API_TOKEN`. Direct ChatGPT → Railway uses **`MCP_AUTH_MODE=oauth`** after WorkOS is configured. Keep the OpenAI tunnel plugin until that ChatGPT handshake succeeds.
 
 Exactly one inbound auth mode is active per process (`none`, `static`, or `oauth`). Static bearer and OAuth do not run together.
 
@@ -58,8 +58,11 @@ Set in the Railway dashboard (Settings → Variables):
 
 | Variable | Required | Notes |
 |---|---|---|
-| `MCP_AUTH_MODE` | Optional | `none` (local default) \| `static` (production default) \| `oauth` (exploratory). See [mcp-oauth-design.md](mcp-oauth-design.md) |
-| `MCP_API_TOKEN` | **Yes when `static`** | Required whenever `MCP_AUTH_MODE=static` (local or Railway). `Authorization: Bearer …` on `/mcp` |
+| `MCP_AUTH_MODE` | Optional | `none` (local default) \| `static` (production default) \| `oauth` (WorkOS). See [mcp-oauth-design.md](mcp-oauth-design.md) |
+| `MCP_API_TOKEN` | **Yes when `static`** | Required whenever `MCP_AUTH_MODE=static`. Unused in `oauth` mode |
+| `WORKOS_AUTHKIT_DOMAIN` | **Yes when `oauth`** | AuthKit origin, e.g. `https://fine-ash-09-staging.authkit.app` |
+| `MCP_OAUTH_ALLOWED_EMAIL` | **Yes when `oauth`** | Comma-separated emails allowed to call `/mcp` (use the Gmail that signs into AuthKit) |
+| `MCP_OAUTH_EXTRA_AUDIENCES` | Optional | Extra JWT `aud` values if ChatGPT omits `resource` |
 | `GOOGLE_CLIENT_ID` | Yes | From OAuth client |
 | `GOOGLE_CLIENT_SECRET` | Yes | From OAuth client |
 | `GOOGLE_REFRESH_TOKEN` | Yes | From local `token.json` |
@@ -140,6 +143,33 @@ curl -i -X POST https://YOUR-APP.up.railway.app/mcp \
 
 See [chatgpt-discovery.md](chatgpt-discovery.md) for debugging ChatGPT tool discovery when using the tunnel.
 
+## 5. ChatGPT over Railway HTTPS (`oauth`)
+
+After this code is deployed, switch the Railway service from `static` to `oauth`. Static bearer and OAuth cannot run in the same process.
+
+1. Confirm WorkOS **Connect → Configuration**: MCP Auth on, CIMD/DCR on, resource indicator `https://tasksaibridge-production.up.railway.app/mcp`.
+2. Railway variables:
+   - `MCP_AUTH_MODE=oauth`
+   - `WORKOS_AUTHKIT_DOMAIN=https://fine-ash-09-staging.authkit.app`
+   - `MCP_OAUTH_ALLOWED_EMAIL=` the **Gmail** you use to sign into WorkOS/AuthKit (comma-separate later if you add another WorkOS user)
+   - Keep `GOOGLE_*` so tools can reach Tasks
+   - You may leave `MCP_API_TOKEN` set; oauth mode ignores it
+3. Redeploy. Logs should show `Auth mode: oauth`.
+4. `GET /health` still 200 with no token. `POST /mcp` without a token should 401 with `WWW-Authenticate` containing `resource_metadata=`.
+5. In ChatGPT, create a **new** plugin/connector (leave the tunnel plugin): URL `https://tasksaibridge-production.up.railway.app/mcp`, authentication **OAuth**. Complete AuthKit login as that Gmail.
+
+Until that handshake succeeds, keep using the tunnel plugin.
+
+### WorkOS Redirects vs resource indicator
+
+Do **not** put the Railway `/mcp` URL on WorkOS **Redirects**. That URL is a **resource indicator** on **Connect → Configuration** only.
+
+- **External Sign-in URI** — leave empty (Standalone Connect, not this setup).
+- **Google social login** — copy the callback URL WorkOS displays (typically a WorkOS/AuthKit Google callback) into Google Cloud Console **Authorized redirect URIs**. You copy WorkOS’s URI out; you do not invent one.
+- **Applications → Redirects** (web app after AuthKit login) — skip for MCP. ChatGPT registers its own redirect via CIMD. Add a URI later only if ChatGPT errors with a specific `redirect_uri`.
+
+Then return to **Connect → Configuration**.
+
 ## Preview / PR environments
 
 Railway PR environments **inherit variables from the base environment by default**. To keep Google OAuth secrets out of untrusted preview deploys:
@@ -152,14 +182,14 @@ The server fails fast on preview boot when Google secrets are present unless `AL
 
 ## Local vs production
 
-| Concern | Local (default) | Railway (`static`) |
-|---|---|---|
-| Bind address | `127.0.0.1:8000` | `0.0.0.0:$PORT` |
-| Google auth | `credentials.json` + browser | `GOOGLE_*` env vars |
-| Inbound MCP auth | `none` — no bearer | `static` + `MCP_API_TOKEN` required |
-| ChatGPT | **OpenAI tunnel** → localhost | **Not static bearer** — OAuth required for direct Railway |
-| Bearer clients | Only if you set `MCP_AUTH_MODE=static` + token | curl, scanners, Inspector, custom clients |
-| Rate limits | Per-process if enabled | Per-process, proxy-sensitive |
+| Concern | Local (default) | Railway `static` | Railway `oauth` |
+|---|---|---|---|
+| Bind address | `127.0.0.1:8000` | `0.0.0.0:$PORT` | `0.0.0.0:$PORT` |
+| Google auth | `credentials.json` + browser | `GOOGLE_*` env vars | `GOOGLE_*` env vars |
+| Inbound MCP auth | `none` — no bearer | `MCP_API_TOKEN` | WorkOS JWT + email allowlist |
+| ChatGPT | **OpenAI tunnel** → localhost | No — connector has no bearer field | New plugin, authentication **OAuth** |
+| Other HTTP clients | Inspector, Cursor | curl / Inspector with bearer | ChatGPT after AuthKit login |
+| Rate limits | Per-process if enabled | Per-process, proxy-sensitive | Per-process, proxy-sensitive |
 
 Both modes share the same Python modules (`mcp_server.py`, `bridge/`, `services/`). Deployment mode is selected via environment variables (`bridge/config`).
 
@@ -169,6 +199,7 @@ Both modes share the same Python modules (`mcp_server.py`, `bridge/`, `services/
 - [ ] Rotate any secrets that were ever pasted into chat or committed by mistake
 - [ ] Railway variables hold Google OAuth secrets (not in repo)
 - [ ] `MCP_API_TOKEN` is set whenever `MCP_AUTH_MODE=static`
-- [ ] ChatGPT uses the **tunnel** path (client access table row 1)
+- [ ] For ChatGPT → Railway: `MCP_AUTH_MODE=oauth`, `WORKOS_AUTHKIT_DOMAIN`, and `MCP_OAUTH_ALLOWED_EMAIL` are set
+- [ ] ChatGPT uses the **tunnel** plugin until the Railway OAuth handshake succeeds
 - [ ] Google OAuth secrets are sealed or excluded from PR preview environments
 - [ ] OAuth client belongs to **your** Google Cloud project — see [google-oauth.md](google-oauth.md)

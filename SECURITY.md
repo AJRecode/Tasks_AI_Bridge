@@ -22,7 +22,8 @@ Use `.env.example` and `credentials.json.example` as templates only.
 ## Production (Railway)
 
 - Store `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REFRESH_TOKEN` as Railway **variables**, not in the repo.
-- Store `MCP_API_TOKEN` as a Railway variable; clients must send `Authorization: Bearer <token>` on `/mcp`.
+- Store `MCP_API_TOKEN` as a Railway variable when `MCP_AUTH_MODE=static`.
+- For `MCP_AUTH_MODE=oauth`, store `WORKOS_AUTHKIT_DOMAIN` and `MCP_OAUTH_ALLOWED_EMAIL` (the AuthKit login emails allowed to call `/mcp`). Do not expose Google refresh tokens to ChatGPT.
 - Prefer **sealed** Railway variables for Google OAuth secrets so PR preview environments do not inherit them.
 - The server runs headless — no browser OAuth on the container.
 - Task titles and notes pass through MCP responses; treat logs as potentially sensitive.
@@ -35,7 +36,7 @@ Use `.env.example` and `credentials.json.example` as templates only.
 - **Not** durable across restarts or Railway replicas
 - **Proxy-sensitive** — Railway’s edge may collapse many callers into one shared IP
 
-For this **single-user** bridge, that is acceptable. Treat rate limits as a **basic abuse guard** (runaway clients, accidental loops), **not** as strong authorization or per-user quotas. **Access control** on public HTTPS is `MCP_AUTH_MODE=static` + `MCP_API_TOKEN`.
+For this **single-user** bridge, that is acceptable. Treat rate limits as a **basic abuse guard** (runaway clients, accidental loops), **not** as strong authorization or per-user quotas. **Access control** on public HTTPS is `MCP_AUTH_MODE=static` + `MCP_API_TOKEN`, or `MCP_AUTH_MODE=oauth` with WorkOS tokens limited by `MCP_OAUTH_ALLOWED_EMAIL`.
 
 ## Local
 

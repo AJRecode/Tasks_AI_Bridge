@@ -181,6 +181,7 @@ def create_server(auth_provider: AuthProvider) -> FastMCP:
         **auth_provider.fastmcp_kwargs(),
     )
     _register_tools(server)
+    auth_provider.register_routes(server)
     return server
 
 

@@ -16,5 +16,5 @@ class NoneAuthProvider(AuthProvider):
             raise RuntimeError(
                 "MCP_AUTH_MODE=none is not allowed in production. "
                 "Use MCP_AUTH_MODE=static for bearer-protected Railway deploys, "
-                "or MCP_AUTH_MODE=oauth when implemented. See docs/mcp-oauth-design.md."
+                "or MCP_AUTH_MODE=oauth with WorkOS/AuthKit. See docs/mcp-oauth-design.md."
             )
