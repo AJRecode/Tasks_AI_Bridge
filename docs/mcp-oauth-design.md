@@ -6,6 +6,65 @@ This document captures **open questions** about letting ChatGPT connect to Tasks
 
 **Do not treat this as a fixed build plan.** The right answer may be “keep using the tunnel” or “use an external identity provider” — not a custom authorization server in this repo.
 
+## August 28, 2026 — clarified handoff for hosted ChatGPT spike
+
+### Historical blocker now confirmed
+
+The blocker was **not Google Tasks OAuth and not Railway hosting itself**. Railway could host the bridge and the production path could authenticate onward to Google Tasks. The unresolved layer was **inbound authentication from ChatGPT to the public Railway MCP endpoint**.
+
+Keep these two authorization relationships separate:
+
+1. **ChatGPT → Tasks Bridge** — MCP-facing inbound authentication. This is the missing hosted-path layer.
+2. **Tasks Bridge → Google Tasks** — Google OAuth. This already exists and must remain separate from MCP authentication.
+
+The OpenAI Secure MCP Tunnel avoided the first problem by providing the working ChatGPT control-plane path to the local unauthenticated MCP endpoint. Direct Railway → ChatGPT requires a ChatGPT-compatible MCP OAuth path instead.
+
+### Preferred next experiment
+
+Use an **external MCP-capable IdP**, with **WorkOS/AuthKit as the first spike candidate**, and keep Tasks Bridge as an OAuth resource server rather than turning this repository into an identity platform.
+
+Google directly is not the preferred MCP-facing IdP path. Google remains the downstream authorization provider for Google Tasks. Using Google login as the basis for MCP authentication would likely require additional authorization-server/broker behavior that an MCP-oriented IdP already supplies.
+
+### Important dependency distinction
+
+The current bridge uses the official Python MCP SDK:
+
+```text
+mcp==1.28.1
+```
+
+and imports:
+
+```python
+from mcp.server.fastmcp import FastMCP
+```
+
+Do **not** assume examples for the separate standalone FastMCP 2.x package are drop-in compatible. In particular, convenient provider integrations documented for standalone FastMCP may not exist in the same form in the official `mcp` package used here.
+
+**Do not migrate MCP frameworks merely to add authentication.** First test whether the existing official MCP SDK architecture can support the required WorkOS resource-server/token-verification flow with a small amount of glue.
+
+The intended seam already exists: [bridge/auth/oauth.py](../bridge/auth/oauth.py) and `AuthProvider.fastmcp_kwargs()` feeding the FastMCP constructor in [mcp_server.py](../mcp_server.py).
+
+### Cursor / implementation handoff: time-boxed spike
+
+The next engineering step should be a deliberately small experiment, not a production OAuth implementation:
+
+1. Keep the existing Tasks tools, Google authorization, Railway deployment, and MCP framework unchanged.
+2. Configure a WorkOS/AuthKit development application suitable for MCP OAuth.
+3. Implement only the minimum `MCP_AUTH_MODE=oauth` behavior needed for Tasks Bridge to act as the protected MCP resource and validate WorkOS-issued access tokens.
+4. Expose the MCP protected-resource metadata required for authorization-server discovery.
+5. Deploy the spike to Railway over HTTPS.
+6. Configure ChatGPT against the Railway `/mcp` endpoint.
+7. Attempt one real end-to-end authentication and tool invocation with the local bridge and OpenAI tunnel turned off.
+
+**Pass criterion:** ChatGPT authenticates directly to the Railway MCP endpoint, discovers Tasks Bridge tools, and successfully invokes at least one harmless read tool (for example `get_bridge_diagnostics` or `get_task_lists`) while the Mac/local tunnel is not participating.
+
+**Fail criterion:** If the handshake fails because of an OAuth/MCP compatibility requirement, capture the exact failing requirement, endpoint, metadata field, registration mechanism, or token validation behavior and stop the spike. Do not respond by building a custom authorization server or migrating frameworks without a new decision.
+
+### Only after the spike passes
+
+Then productionize the existing OAuth seam: configuration/env vars, token validation, protected-resource metadata, 401/`WWW-Authenticate` behavior, automated tests, Railway documentation, security review, and operational diagnostics. Re-evaluate the IdP choice only if the WorkOS spike exposes a concrete incompatibility.
+
 ## What works today (certain)
 
 | Path | Status | Notes |
