@@ -222,8 +222,11 @@ def test_oauth_http_unauthenticated_challenge_and_metadata(monkeypatch):
     assert metadata.status_code == 200
     body = metadata.json()
     assert body["resource"] == "https://tasksaibridge-production.up.railway.app/mcp"
-    issuers = [str(item).rstrip("/") for item in body["authorization_servers"]]
-    assert issuers == ["https://fine-ash-09-staging.authkit.app"]
+    assert body["authorization_servers"] == [
+        "https://fine-ash-09-staging.authkit.app"
+    ]
+    assert "email" in body["scopes_supported"]
+    assert "offline_access" in body["scopes_supported"]
 
     root_metadata = asyncio.run(
         _request(app, "GET", "/.well-known/oauth-protected-resource")
@@ -297,6 +300,7 @@ def test_oauth_chatgpt_discovery_aliases_and_cors_preflight(monkeypatch):
 
     for path in (
         "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-protected-resource/mcp",
         "/.well-known/oauth-authorization-server",
         "/.well-known/oauth-authorization-server/mcp",
     ):
@@ -308,8 +312,13 @@ def test_oauth_chatgpt_discovery_aliases_and_cors_preflight(monkeypatch):
                 headers={
                     "Origin": "https://chatgpt.com",
                     "Access-Control-Request-Method": "GET",
+                    "Access-Control-Request-Headers": (
+                        "authorization,mcp-protocol-version,content-type"
+                    ),
                 },
             )
         )
         assert options.status_code == 204, path
         assert options.headers.get("access-control-allow-origin") == "*"
+        allow = options.headers.get("access-control-allow-headers", "").lower()
+        assert "authorization" in allow, path

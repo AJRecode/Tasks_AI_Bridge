@@ -157,8 +157,9 @@ After this code is deployed, switch the Railway service from `static` to `oauth`
 3. Redeploy. Logs should show `Auth mode: oauth`.
 4. `GET /health` still 200 with no token. `POST /mcp` without a token should 401 with `WWW-Authenticate` containing `resource_metadata=`.
 5. ChatGPT also fetches `/.well-known/oauth-authorization-server/mcp` on the **MCP host** (not only AuthKit). A 404 there produces “Something went wrong with setting up the connection” / Reconnect with **No app actions**.
-6. Plugin URL must be exactly `https://tasksaibridge-production.up.railway.app/mcp` (`tasksaibridge` with **ai**). `https://tasksbridge-production.up.railway.app` is a different Railway hostname and returns `Application not found`.
-7. In ChatGPT, **Reconnect** or create **New Bridges** (leave the **AJ Task MCP** tunnel plugin): authentication **OAuth**. Complete AuthKit login as that Gmail.
+6. WorkOS **Connect access tokens do not include `email`**. The bridge resolves identity via AuthKit `POST /oauth2/userinfo` and still allowlists `MCP_OAUTH_ALLOWED_EMAIL`. Logs of `Rejected MCP OAuth token for email None` mean 1.8.0-era verification; **1.8.1** fixes that.
+7. Plugin URL must be exactly `https://tasksaibridge-production.up.railway.app/mcp` (`tasksaibridge` with **ai**). `https://tasksbridge-production.up.railway.app` is a different Railway hostname and returns `Application not found`.
+8. In ChatGPT, **Reconnect** or create **New Bridges** (leave the **AJ Task MCP** tunnel plugin): authentication **OAuth**. Complete AuthKit login as that Gmail if ChatGPT shows AuthKit; a reused token can succeed without a new login once 1.8.1 is live.
 
 Until that handshake succeeds, keep using the tunnel plugin.
 

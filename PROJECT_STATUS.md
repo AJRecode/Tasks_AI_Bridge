@@ -1,7 +1,7 @@
 # Project Status
 
-* **Last updated:** August 28, 2026 11:40 ET (ChatGPT OAuth discovery aliases + CORS; SERVER_VERSION 1.8.0)
-* **Server version:** `1.8.0` (`bridge/diagnostics/`)
+* **Last updated:** August 28, 2026 12:20 ET (WorkOS userinfo email allowlist; SERVER_VERSION 1.8.1)
+* **Server version:** `1.8.1` (`bridge/diagnostics/`)
 * **License:** MIT
 * **Deployment modes:** `local` (default) | `production` (Railway via env)
 * **Inbound auth modes:** `none` (local) | `static` (Railway bearer) | `oauth` (WorkOS/AuthKit resource server)
@@ -75,7 +75,7 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 * **ChatGPT tool discovery lag** — new MCP tools may appear in Inspector before ChatGPT exposes them. See [docs/chatgpt-discovery.md](docs/chatgpt-discovery.md).
 * **ChatGPT plugin UI** — OAuth / No auth / Mixed only (no bearer Token). Direct Railway ChatGPT requires `MCP_AUTH_MODE=oauth`.
-* **ChatGPT New Bridges Reconnect (2026-08-28)** — plugin URL is the correct host `tasksaibridge-production` (with **ai**), OAuth selected, but tools never listed (`No app actions available yet`). Live `GET /.well-known/oauth-authorization-server/mcp` was **404**; custom well-known routes lacked CORS; `OPTIONS /mcp` returned 401. Fix in `1.8.0` (needs Railway redeploy). `tasksbridge-production` (no **ai**) is a dead Railway hostname (`Application not found`) — do not use it.
+* **ChatGPT New Bridges Reconnect (2026-08-28)** — plugin URL is correct (`tasksaibridge-production` with **ai**), OAuth selected. 1.8.0 discovery is live; Railway logs then showed `Rejected MCP OAuth token for email None` because WorkOS Connect access tokens omit `email`. Fix in **1.8.1** (userinfo lookup + PRM scopes on FastMCP’s `/mcp` well-known path). `tasksbridge-production` (no **ai**) is a dead Railway hostname — do not use it.
 * **WorkOS “Set as default”** on a single resource indicator may be hidden; ChatGPT should still send `resource=` the `/mcp` URL.
 * **`tools/list_changed` not enabled** — optional future enhancement.
 * **ChatGPT tunnel + `MCP_AUTH_MODE=static`** — incompatible; tunnel does not send bearer. Use `none` locally for ChatGPT.
@@ -120,8 +120,8 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 ## Recent result
 
-ChatGPT **New Bridges** is pointed at the correct Railway host (`tasksaibridge-production`, with **ai**) and uses OAuth, but Reconnect fails with a brief toast and **No app actions available yet**. Production probes: `GET /.well-known/oauth-authorization-server/mcp` **404**, missing CORS on custom well-known routes, `OPTIONS /mcp` **401**. Code fix in `1.8.0` (path-suffixed well-known aliases, CORS, OPTIONS `/mcp` 204) — not live until Railway redeploy. Hostname `tasksbridge-production` (no **ai**) is a dead Railway app and is **not** what New Bridges uses.
+ChatGPT **New Bridges** Reconnect reaches `/mcp` with a WorkOS JWT but 1.8.0 rejected it (`email None`). WorkOS Connect access tokens do not carry `email` (ID token / `POST /oauth2/userinfo` do). **1.8.1** resolves email from AuthKit userinfo, keeps `MCP_OAUTH_ALLOWED_EMAIL`, and serves PRM with `email`/`openid`/`profile`/`offline_access` on FastMCP’s `/.well-known/oauth-protected-resource/mcp` path. Not live until Railway redeploys.
 
 ## Next action
 
-Redeploy Railway with `1.8.0`, then **Reconnect New Bridges** in ChatGPT (URL must stay `https://tasksaibridge-production.up.railway.app/mcp`). Keep **AJ Task MCP** (tunnel) unchanged. Do not put Google tokens in ChatGPT. Confirm WorkOS Connect still has CIMD/DCR and resource indicator `https://tasksaibridge-production.up.railway.app/mcp`.
+Redeploy Railway with **1.8.1**, then **Reconnect New Bridges** in ChatGPT (URL stays `https://tasksaibridge-production.up.railway.app/mcp`). Keep **AJ Task MCP** unchanged. Confirm Railway HTTP logs: `POST /mcp` 200 (or initialize success) instead of `Rejected MCP OAuth token for email None`. WorkOS Connect still needs CIMD/DCR and resource indicator `https://tasksaibridge-production.up.railway.app/mcp`.
