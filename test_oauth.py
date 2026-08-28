@@ -5,7 +5,13 @@ from __future__ import annotations
 import asyncio
 import time
 
-from bridge.auth.oauth import WorkOSTokenVerifier, audience_values, email_from_claims
+from bridge.auth.oauth import (
+    DISCOVERY_SCOPES,
+    WorkOSTokenVerifier,
+    audience_values,
+    email_from_claims,
+    protected_resource_payload,
+)
 
 ISSUER = "https://fine-ash-09-staging.authkit.app"
 RESOURCE = "https://tasksaibridge-production.up.railway.app/mcp"
@@ -25,6 +31,16 @@ def test_email_from_claims_variants():
     assert email_from_claims({"emails": ["b@example.com"]}) == "b@example.com"
     assert email_from_claims({"emails": [{"email": "c@example.com"}]}) == "c@example.com"
     assert email_from_claims({}) is None
+
+
+def test_protected_resource_payload_matches_authkit_issuer():
+    payload = protected_resource_payload(RESOURCE, ISSUER)
+    assert payload["resource"] == RESOURCE
+    assert payload["authorization_servers"] == [ISSUER]
+    assert payload["bearer_methods_supported"] == ["header"]
+    assert payload["scopes_supported"] == list(DISCOVERY_SCOPES)
+    assert ISSUER.endswith("authkit.app")
+    assert not ISSUER.endswith("/")
 
 
 def test_audience_values_string_and_list():

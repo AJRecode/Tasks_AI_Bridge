@@ -204,7 +204,8 @@ def test_oauth_http_unauthenticated_challenge_and_metadata(monkeypatch):
     server, auth_provider = _bootstrap_production_http_server(monkeypatch, **_OAUTH_ENV)
     assert auth_provider.mode == "oauth"
     app = server.streamable_http_app()
-    assert type(app).__name__ == "ProductionSecurityASGI"
+    assert type(app).__name__ == "OAuthCorsASGI"
+    assert type(app.app).__name__ == "ProductionSecurityASGI"
 
     unauth = asyncio.run(
         _request(app, "POST", "/mcp", headers=_MCP_HEADERS, json_body=_INITIALIZE_BODY)
@@ -213,6 +214,7 @@ def test_oauth_http_unauthenticated_challenge_and_metadata(monkeypatch):
     www = unauth.headers.get("www-authenticate", "")
     assert "resource_metadata=" in www
     assert "oauth-protected-resource" in www
+    assert unauth.headers.get("access-control-allow-origin") == "*"
 
     metadata = asyncio.run(
         _request(app, "GET", "/.well-known/oauth-protected-resource/mcp")
@@ -232,7 +234,82 @@ def test_oauth_http_unauthenticated_challenge_and_metadata(monkeypatch):
     assert root_body["authorization_servers"] == [
         "https://fine-ash-09-staging.authkit.app"
     ]
+    assert "offline_access" in root_body["scopes_supported"]
+    assert root_metadata.headers.get("access-control-allow-origin") == "*"
 
     health = asyncio.run(_request(app, "GET", "/health"))
     assert health.status_code == 200
     assert health.json()["status"] == "ok"
+
+
+def test_oauth_chatgpt_discovery_aliases_and_cors_preflight(monkeypatch):
+    """ChatGPT Reconnect hits path-suffixed well-known URLs and browser OPTIONS."""
+    server, _auth_provider = _bootstrap_production_http_server(monkeypatch, **_OAUTH_ENV)
+    from bridge.auth import oauth as oauth_mod
+
+    async def fake_fetch(issuer: str, document: str):
+        return oauth_mod.json_with_cors(
+            {
+                "issuer": issuer,
+                "document": document,
+                "client_id_metadata_document_supported": True,
+                "scopes_supported": list(oauth_mod.DISCOVERY_SCOPES),
+            }
+        )
+
+    monkeypatch.setattr(oauth_mod, "fetch_authkit_well_known", fake_fetch)
+    app = server.streamable_http_app()
+    origin_headers = {
+        "Origin": "https://chatgpt.com",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": (
+            "authorization,content-type,mcp-session-id"
+        ),
+    }
+
+    preflight = asyncio.run(_request(app, "OPTIONS", "/mcp", headers=origin_headers))
+    assert preflight.status_code == 204
+    assert preflight.headers.get("access-control-allow-origin") == "*"
+    allow_headers = preflight.headers.get("access-control-allow-headers", "").lower()
+    assert "authorization" in allow_headers
+    assert "mcp-session-id" in allow_headers
+
+    as_mcp = asyncio.run(
+        _request(app, "GET", "/.well-known/oauth-authorization-server/mcp")
+    )
+    assert as_mcp.status_code == 200
+    as_body = as_mcp.json()
+    assert as_body["issuer"] == "https://fine-ash-09-staging.authkit.app"
+    assert as_body["document"] == "oauth-authorization-server"
+    assert as_mcp.headers.get("access-control-allow-origin") == "*"
+
+    as_root = asyncio.run(
+        _request(app, "GET", "/.well-known/oauth-authorization-server")
+    )
+    assert as_root.status_code == 200
+    assert as_root.json()["document"] == "oauth-authorization-server"
+
+    oidc_mcp = asyncio.run(
+        _request(app, "GET", "/.well-known/openid-configuration/mcp")
+    )
+    assert oidc_mcp.status_code == 200
+    assert oidc_mcp.json()["document"] == "openid-configuration"
+
+    for path in (
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/oauth-authorization-server/mcp",
+    ):
+        options = asyncio.run(
+            _request(
+                app,
+                "OPTIONS",
+                path,
+                headers={
+                    "Origin": "https://chatgpt.com",
+                    "Access-Control-Request-Method": "GET",
+                },
+            )
+        )
+        assert options.status_code == 204, path
+        assert options.headers.get("access-control-allow-origin") == "*"

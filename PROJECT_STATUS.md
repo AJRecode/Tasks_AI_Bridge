@@ -1,7 +1,7 @@
 # Project Status
 
-* **Last updated:** August 28, 2026 11:30 ET (pip-audit CVE pin bump: cryptography 50.0.1, PyJWT 2.13.0)
-* **Server version:** `1.7.0` (`bridge/diagnostics/` — unchanged; dep-only fix)
+* **Last updated:** August 28, 2026 11:40 ET (ChatGPT OAuth discovery aliases + CORS; SERVER_VERSION 1.8.0)
+* **Server version:** `1.8.0` (`bridge/diagnostics/`)
 * **License:** MIT
 * **Deployment modes:** `local` (default) | `production` (Railway via env)
 * **Inbound auth modes:** `none` (local) | `static` (Railway bearer) | `oauth` (WorkOS/AuthKit resource server)
@@ -59,7 +59,7 @@ curl / Inspector                → same URL with static bearer (MCP_AUTH_MODE=s
 | MCP HTTP + `/health` | `curl http://127.0.0.1:8000/health` |
 | Local orchestration | `./start_tasks_bridge.sh --status` (tunnel idle = UP, not STALE) |
 | macOS menu bar app | `./scripts/build-menubar-app.sh` → [docs/macos-menubar.md](docs/macos-menubar.md) |
-| Railway `/health` | `https://tasksaibridge-production.up.railway.app/health` (static, 2026-08-28) |
+| Railway `/health` | `https://tasksaibridge-production.up.railway.app/health` (oauth, 2026-08-28) |
 | GitHub CI | `.github/workflows/ci.yml` — pytest, pip-audit, bandit on push/PR |
 | Inbound auth | `bridge/auth/` — `static` requires `MCP_API_TOKEN`; `oauth` requires WorkOS env vars |
 | HTTP hardening | `bridge/transport/` — per-process rate limits (proxy-sensitive), size limits |
@@ -75,6 +75,7 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 * **ChatGPT tool discovery lag** — new MCP tools may appear in Inspector before ChatGPT exposes them. See [docs/chatgpt-discovery.md](docs/chatgpt-discovery.md).
 * **ChatGPT plugin UI** — OAuth / No auth / Mixed only (no bearer Token). Direct Railway ChatGPT requires `MCP_AUTH_MODE=oauth`.
+* **ChatGPT New Bridges Reconnect (2026-08-28)** — plugin URL is the correct host `tasksaibridge-production` (with **ai**), OAuth selected, but tools never listed (`No app actions available yet`). Live `GET /.well-known/oauth-authorization-server/mcp` was **404**; custom well-known routes lacked CORS; `OPTIONS /mcp` returned 401. Fix in `1.8.0` (needs Railway redeploy). `tasksbridge-production` (no **ai**) is a dead Railway hostname (`Application not found`) — do not use it.
 * **WorkOS “Set as default”** on a single resource indicator may be hidden; ChatGPT should still send `resource=` the `/mcp` URL.
 * **`tools/list_changed` not enabled** — optional future enhancement.
 * **ChatGPT tunnel + `MCP_AUTH_MODE=static`** — incompatible; tunnel does not send bearer. Use `none` locally for ChatGPT.
@@ -119,8 +120,8 @@ Run `./start_tasks_bridge.sh --status` for a live snapshot. PIDs and process det
 
 ## Recent result
 
-Pinned patched deps so CI `pip-audit` can pass: `cryptography==48.0.1` → `50.0.1` (CVE-2026-69247 / 69248 / 69249) and `PyJWT==2.10.1` → `2.13.0` (CVE-2025-45768 last-affected 2.10.1, plus 2026 PyJWT advisories). No MCP tool or `SERVER_VERSION` change. Local pytest 45 passed; pip-audit of the new pins reported no known vulnerabilities. OAuth verifier code unchanged (`bridge/auth/oauth.py` still uses PyJWT + JWKS).
+ChatGPT **New Bridges** is pointed at the correct Railway host (`tasksaibridge-production`, with **ai**) and uses OAuth, but Reconnect fails with a brief toast and **No app actions available yet**. Production probes: `GET /.well-known/oauth-authorization-server/mcp` **404**, missing CORS on custom well-known routes, `OPTIONS /mcp` **401**. Code fix in `1.8.0` (path-suffixed well-known aliases, CORS, OPTIONS `/mcp` 204) — not live until Railway redeploy. Hostname `tasksbridge-production` (no **ai**) is a dead Railway app and is **not** what New Bridges uses.
 
 ## Next action
 
-Push the requirements pin bump (not committed this session) so `test-and-scan` on `main` goes green. Then on Railway set `MCP_AUTH_MODE=oauth`, `WORKOS_AUTHKIT_DOMAIN`, and `MCP_OAUTH_ALLOWED_EMAIL`. Create a new ChatGPT plugin with OAuth; keep the tunnel plugin until it works.
+Redeploy Railway with `1.8.0`, then **Reconnect New Bridges** in ChatGPT (URL must stay `https://tasksaibridge-production.up.railway.app/mcp`). Keep **AJ Task MCP** (tunnel) unchanged. Do not put Google tokens in ChatGPT. Confirm WorkOS Connect still has CIMD/DCR and resource indicator `https://tasksaibridge-production.up.railway.app/mcp`.
